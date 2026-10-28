@@ -43,7 +43,7 @@ label.chk{display:flex;gap:6px;align-items:center;font-size:13px}
   <div id="drop"><p><b>Glisse le plan ici</b> ou</p><input type="file" id="file" accept="application/pdf"><p class="small">Échelle : <input id="scaleDen" type="number" value="1000" style="width:90px"> (1:1000 par défaut)</p></div>
   <div id="status"></div>
   <div id="bar" class="bar"></div>
-  <div id="edit" class="editbar" hidden><button type="button" class="btn sec" id="editBtn">✋ Corriger les angles</button><button type="button" class="btn sec" id="undoBtn" hidden>↺ Annuler</button><button type="button" class="btn sec" id="rectBtn" hidden>▭ Jaune en rectangle</button><p id="editHelp" class="msg warn" hidden></p></div>
+  <div id="edit" class="editbar" hidden><button type="button" class="btn sec" id="editBtn">✋ Corriger les angles</button><button type="button" class="btn sec" id="undoBtn" hidden>↺ Annuler</button><button type="button" class="btn sec" id="rectBtn" hidden>▭ Jaune en rectangle</button><button type="button" class="btn" id="delBtn" hidden style="background:#d0021b">🗑 Supprimer l’angle</button><button type="button" class="btn" id="r1Btn" hidden style="background:#073b2a">R1 ici</button><button type="button" class="btn" id="r2Btn" hidden style="background:#073b2a">R2 ici</button><p id="editHelp" class="msg warn" hidden></p></div>
   <div id="viewWrap" hidden><div class="zoom"><button type="button" id="rot" title="Tourner le plan">↻</button><button type="button" id="zin" title="Zoomer">＋</button><button type="button" id="zout" title="Dézoomer">−</button><button type="button" id="zfit" title="Tout voir">⤢</button></div><div id="stage"><canvas id="cv"></canvas><svg id="ov" xmlns="http://www.w3.org/2000/svg"></svg></div></div>
   <p class="small" id="hint" hidden>Choisis un bâtiment avec les boutons au-dessus du plan (ou touche-le sur le plan). ↻ tourne le plan. <b>✋ Corriger les angles</b> permet de déplacer un angle et de choisir les angles R1 et R2 (utile pour les plans en image).</p>
  </section>
@@ -99,7 +99,7 @@ async function load(bytes){S.bytes=bytes;say('⏳ Lecture du plan…','warn');
  await render();
  if(S.kind==='vecteur')S.blds=fromVector(shapes);else if(S.kind==='image')S.blds=await fromImage();else S.blds=[];
  S.blds.forEach((b,i)=>b.id=i);S.k=1;dropIsolated();autoChain();
- $('viewWrap').hidden=false;$('panel').hidden=false;$('hint').hidden=false;$('edit').hidden=false;S.edit=false;S.undo=[];S.rpick=null;
+ $('viewWrap').hidden=false;$('panel').hidden=false;$('hint').hidden=false;$('edit').hidden=false;S.edit=false;S.undo=[];S.selPt=null;
  $('kind').innerHTML=S.kind==='vecteur'?'<div class="msg ok">✅ Plan dessiné : les angles sont lus exactement.</div>':S.kind==='image'?'<div class="msg warn">⚠️ Plan en <b>image</b> : les angles sont repérés par la couleur. Vérifie-les (et ajuste-les si besoin), puis fais le <b>contrôle d’échelle</b> avec une cote du plan.</div>':'';
  const nv=S.blds.filter(b=>b.type==='vert'&&b.on).length,nj=S.blds.filter(b=>b.type==='jaune'&&b.on).length;
  say(nv?('✅ '+nv+' bâtiment'+(nv>1?'s':'')+' vert'+(nv>1?'s':'')+' et '+nj+' jaune'+(nj>1?'s':'')+' trouvés.'):'Aucun bâtiment vert trouvé sur ce plan.',nv?'ok':'err');
@@ -325,7 +325,7 @@ function compute(){const rows=[];const G=S.blds.filter(b=>b.type==='vert'&&b.on)
    res.cotes=[{from:A,fn:n+'A',to:R1,tn:'R1',v:meters(A,R1)},{from:A,fn:n+'A',to:R2,tn:'R2',v:meters(A,R2)},{from:B,fn:n+'B',to:R1,tn:'R1',v:meters(B,R1)},{from:B,fn:n+'B',to:R2,tn:'R2',v:meters(B,R2)}];res.ab=meters(A,B);}
   rows.push(res);});return rows;}
 // ---------- affichage ----------
-S.rot=0;S.sel=1;S.mode='';S.pick=[];S.edit=false;S.undo=[];S.rpick=null;// sel : n° du bâtiment affiché (0 = tous) ; mode : '' | 'trier' | 'fusion'
+S.rot=0;S.sel=1;S.mode='';S.pick=[];S.edit=false;S.undo=[];S.selPt=null;// sel : n° du bâtiment affiché (0 = tous) ; mode : '' | 'trier' | 'fusion'
 async function render(){const v0=S.page.getViewport({scale:1});const sc=Math.min(3,Math.sqrt(12e6/(v0.width*v0.height)));S.vp=S.page.getViewport({scale:sc,rotation:(S.page.rotate+S.rot)%360});const c=$('cv');c.width=Math.floor(S.vp.width);c.height=Math.floor(S.vp.height);await S.page.render({canvasContext:c.getContext('2d'),viewport:S.vp,intent:'print'}).promise;
  const ov=$('ov');ov.setAttribute('width',c.width);ov.setAttribute('height',c.height);ov.setAttribute('viewBox','0 0 '+c.width+' '+c.height);$('stage').style.width=c.width+'px';$('stage').style.height=c.height+'px';}
 const V=p=>S.vp.convertToViewportPoint(p[0],p[1]);
@@ -348,7 +348,7 @@ function drawOverlay(rows){const ov=$('ov');const u=1/Math.max(0.05,S.zoom);cons
    [[r.R1,'R1'],[r.R2,'R2']].forEach(([p,t])=>{const q=V(p);h+='<circle cx="'+q[0]+'" cy="'+q[1]+'" r="'+(4.5*ub)+'" fill="#073b2a" stroke="#fff" stroke-width="'+ub+'"/>'+(one?label(off(q,r.ref,14*ub),t,'#073b2a',ub,true):'');});}
   const cen=center(r.g);h+='<circle cx="'+cen[0]+'" cy="'+cen[1]+'" r="'+(12*ub)+'" fill="#073b2a"/><text x="'+cen[0]+'" y="'+(cen[1]+5*ub)+'" font-size="'+(14*ub)+'" font-weight="700" fill="#fff" text-anchor="middle" font-family="Arial">'+r.n+'</text>';});
  // mode « Corriger les angles » : un gros rond sur chaque angle (vert : à déplacer ; jaune : à déplacer ou à choisir comme R1 / R2)
- if(S.edit)S.blds.forEach(b=>{if(!b.on||(one&&!focus.has(b.id)))return;const pk=S.rpick&&S.rpick.ref===b.id?S.rpick.i:-1;b.pts.forEach((p,i)=>{const q=V(p);
+ if(S.edit)S.blds.forEach(b=>{if(!b.on||(one&&!focus.has(b.id)))return;const pk=S.selPt&&S.selPt.b===b.id?S.selPt.i:-1;b.pts.forEach((p,i)=>{const q=V(p);
   h+='<circle class="hdl" cx="'+q[0]+'" cy="'+q[1]+'" r="'+(14*u)+'" fill="'+(i===pk?'rgba(29,99,216,.45)':'rgba(255,255,255,.35)')+'" stroke="'+(b.type==='vert'?'#00a03a':'#b07d00')+'" stroke-width="'+(2.5*u)+'" data-b="'+b.id+'" data-i="'+i+'" style="cursor:move"/>';});});
  ov.innerHTML=h;}
 function center(b){const P=b.pts.map(V);return P.reduce((s,p)=>[s[0]+p[0]/P.length,s[1]+p[1]/P.length],[0,0]);}
@@ -363,7 +363,9 @@ function drawPanel(rows){let h='';const one=S.sel>0;
  $('blds').innerHTML=h;
  const sel=$('calSide');const cur=sel.value;sel.innerHTML=rows.map(r=>r.sides.map((s,i)=>'<option value="'+r.g.id+':'+i+'">Bâtiment '+r.n+', côté '+(i+1)+' ('+fmt(s)+' m)</option>').join('')).join('');if(cur)sel.value=cur;}
 function drawEdit(){$('editBtn').classList.toggle('act',!!S.edit);$('editBtn').textContent=S.edit?'✔ Terminer la correction':'✋ Corriger les angles';$('undoBtn').hidden=!S.edit;$('rectBtn').hidden=!S.edit;$('undoBtn').disabled=!S.undo.length;
- $('editHelp').hidden=!S.edit;$('editHelp').innerHTML=S.rpick?'Touche maintenant le <b>2ᵉ angle jaune</b> : il deviendra <b>R2</b>.':'• <b>Fais glisser</b> un rond pour déplacer un angle.<br>• <b>Touche 2 angles jaunes</b> l’un après l’autre : ils deviennent <b>R1</b> puis <b>R2</b>.<br>• <b>Touche un côté jaune</b> pour y ajouter un angle ; <b>appui long</b> sur un rond jaune pour le supprimer.';}
+ const sp=S.edit&&S.selPt&&S.blds[S.selPt.b]&&S.blds[S.selPt.b].pts[S.selPt.i]?S.selPt:null;if(!sp)S.selPt=null;const yel=sp&&S.blds[sp.b].type==='jaune';
+ $('delBtn').hidden=$('r1Btn').hidden=$('r2Btn').hidden=!yel;$('delBtn').disabled=!!yel&&S.blds[sp.b].pts.length<=3;
+ $('editHelp').hidden=!S.edit;$('editHelp').innerHTML=sp?(yel?'Angle sélectionné (en bleu) : <b>🗑 Supprimer l’angle</b>, ou choisis-le comme <b>R1</b> ou <b>R2</b>. Touche-le à nouveau pour le désélectionner.':'Angle vert sélectionné : un bâtiment vert garde ses 4 angles, fais-le <b>glisser</b> pour le déplacer.'):'• <b>Fais glisser</b> un rond pour déplacer un angle.<br>• <b>Touche un rond</b> pour le sélectionner : boutons <b>Supprimer</b>, <b>R1 ici</b>, <b>R2 ici</b>.<br>• <b>Touche un côté jaune</b> pour y ajouter un angle.';}
 // ---------- interactions ----------
 $('bar').addEventListener('click',e=>{const t=e.target.closest('[data-sel]');if(!t)return;S.sel=+t.dataset.sel;refresh();if(S.sel)focusOn(S.sel);});
 function focusOn(n){const r=compute().find(x=>x.n===n);if(!r)return;const P=[...r.g.pts,...(r.ref?r.ref.pts:[])].map(V);const xs=P.map(p=>p[0]),ys=P.map(p=>p[1]);const w=$('viewWrap');const bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...ys)-Math.min(...ys);
@@ -371,11 +373,11 @@ function focusOn(n){const r=compute().find(x=>x.n===n);if(!r)return;const P=[...
 $('blds').addEventListener('change',e=>{const t=e.target;if(t.dataset.ref!=null){const g=S.blds[+t.dataset.ref];g.ref=+t.value;g.face=null;refresh();}});
 $('blds').addEventListener('click',e=>{const m=e.target.closest('[data-mode]');if(m){S.mode=S.mode===m.dataset.mode?'':m.dataset.mode;S.pick=[];refresh();return;}
  const t=e.target.closest('[data-face]');if(!t)return;const g=S.blds[+t.dataset.face];const r=S.blds[g.ref];const f=g.face!=null?g.face:faceOf(g,r);g.face=(f+1)%g.pts.length;refresh();});
-$('editBtn').onclick=()=>{S.edit=!S.edit;S.rpick=null;if(S.edit)S.mode='';refresh();};
-$('undoBtn').onclick=()=>{const s=S.undo.pop();if(!s||s.length!==S.blds.length)return;s.forEach((x,i)=>{Object.assign(S.blds[i],{pts:x.pts,on:x.on,ref:x.ref,face:x.face,rsel:x.rsel});});S.rpick=null;refresh();};
+$('editBtn').onclick=()=>{S.edit=!S.edit;S.selPt=null;if(S.edit)S.mode='';refresh();};
+$('undoBtn').onclick=()=>{const s=S.undo.pop();if(!s||s.length!==S.blds.length)return;s.forEach((x,i)=>{Object.assign(S.blds[i],{pts:x.pts,on:x.on,ref:x.ref,face:x.face,rsel:x.rsel});});S.selPt=null;refresh();};
 // le bâtiment jaune de référence (contour trop découpé) devient un simple rectangle
 $('rectBtn').onclick=()=>{const rows=compute();const r=rows.find(x=>x.n===S.sel)||rows[0];if(!r||!r.ref||r.ref.type!=='jaune'){say('Choisis d’abord un bâtiment qui s’appuie sur un jaune.','warn');return;}
- snap();r.ref.pts=minRect(hull(r.ref.pts)).pts;S.blds.forEach(g=>{if(g.rsel&&g.rsel.ref===r.ref.id)g.rsel=null;});S.rpick=null;refresh();};
+ snap();r.ref.pts=minRect(hull(r.ref.pts)).pts;S.blds.forEach(g=>{if(g.rsel&&g.rsel.ref===r.ref.id)g.rsel=null;});S.selPt=null;refresh();};
 // avant chaque correction : on garde l'état pour pouvoir annuler
 function snap(){S.undo.push(S.blds.map(b=>({pts:b.pts.map(p=>p.slice()),on:b.on,ref:b.ref,face:b.face,rsel:b.rsel?{...b.rsel}:null})));if(S.undo.length>40)S.undo.shift();}
 // angle ajouté (ins = position) ou supprimé (del) dans un bâtiment jaune : les choix R1 / R2 qui s'y rapportent suivent
@@ -392,24 +394,24 @@ ov.addEventListener('click',e=>{if(S.edit){editTap(e);return;}const pg=e.target.
  if(S.mode==='trier'){b.on=!b.on;autoChain();refresh();return;}
  if(S.mode==='fusion'){if(!S.pick.includes(b.id))S.pick.push(b.id);if(S.pick.length===2){const [x,y]=S.pick;if(S.blds[x].type!==S.blds[y].type){say('Choisis deux morceaux de la même couleur.','err');S.pick=[];refresh();return;}mergeBlds(Math.min(x,y),Math.max(x,y));S.pick=[];S.mode='';say('✅ Morceaux réunis en un seul bâtiment.','ok');}refresh();return;}
  if(b.type==='vert'&&b.on){const r=compute().find(x=>x.g===b);if(r){S.sel=r.n;refresh();}}});
-// rond : glisser = déplacer ; toucher (jaune) = choisir R1 puis R2 ; appui long (jaune) = supprimer l'angle
-ov.addEventListener('pointerdown',e=>{const h=e.target.closest('.hdl');if(!h)return;drag={b:+h.dataset.b,i:+h.dataset.i,x:e.clientX,y:e.clientY,moved:false,done:false};
- const d0=drag;d0.timer=setTimeout(()=>{if(drag!==d0||d0.moved)return;d0.done=true;const b=S.blds[d0.b];if(b.type!=='jaune'||b.pts.length<=3){say('Un bâtiment vert garde ses 4 angles : fais-les glisser.','warn');return;}
-  snap();b.pts.splice(d0.i,1);shiftR(b.id,d0.i,false);S.rpick=null;if(navigator.vibrate)navigator.vibrate(30);refresh();},650);
- ov.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();});
-ov.addEventListener('pointermove',e=>{if(!drag||drag.done)return;if(!drag.moved){if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<6)return;drag.moved=true;clearTimeout(drag.timer);snap();}
+// rond : glisser = déplacer ; toucher = sélectionner (puis boutons Supprimer / R1 ici / R2 ici)
+ov.addEventListener('pointerdown',e=>{const h=e.target.closest('.hdl');if(!h)return;drag={b:+h.dataset.b,i:+h.dataset.i,x:e.clientX,y:e.clientY,moved:false};ov.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();});
+ov.addEventListener('pointermove',e=>{if(!drag)return;if(!drag.moved){if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<6)return;drag.moved=true;snap();}
  const p=evPt(e);S.blds[drag.b].pts[drag.i]=S.vp.convertToPdfPoint(p[0],p[1]);refresh();});
-ov.addEventListener('pointerup',()=>{if(!drag)return;const d0=drag;drag=null;clearTimeout(d0.timer);if(d0.moved||d0.done)return;S.tapped=Date.now();
- const b=S.blds[d0.b];if(b.type!=='jaune')return;const rows=compute();const r=rows.find(x=>x.n===S.sel)||rows.find(x=>x.ref===b);if(!r)return;
- if(r.g.ref!==b.id){r.g.ref=b.id;r.g.face=null;r.g.rsel=null;}
- if(!S.rpick||S.rpick.ref!==b.id){S.rpick={ref:b.id,i:d0.i,g:r.g.id};refresh();return;}
- if(S.rpick.i===d0.i){S.rpick=null;refresh();return;}
- snap();S.blds[S.rpick.g].rsel={ref:b.id,i:S.rpick.i,j:d0.i};S.rpick=null;say('✅ R1 et R2 choisis.','ok');refresh();});
+ov.addEventListener('pointerup',()=>{if(!drag)return;const d0=drag;drag=null;if(d0.moved)return;S.tapped=Date.now();
+ S.selPt=S.selPt&&S.selPt.b===d0.b&&S.selPt.i===d0.i?null:{b:d0.b,i:d0.i};refresh();});
+// bâtiment vert dont le jaune sélectionné est (ou devient) la référence
+function rowFor(b){const rows=compute();const r=rows.find(x=>x.n===S.sel)||rows.find(x=>x.ref===b);if(!r)return null;if(r.g.ref!==b.id){r.g.ref=b.id;r.g.face=null;r.g.rsel=null;return compute().find(x=>x.g===r.g);}return r;}
+function setR(which){const sp=S.selPt;if(!sp)return;const b=S.blds[sp.b];if(b.type!=='jaune')return;snap();const r=rowFor(b);if(!r){S.undo.pop();say('Aucun bâtiment vert ne peut s’appuyer sur ce jaune.','warn');return;}
+ let i=b.pts.indexOf(r.R1),j=b.pts.indexOf(r.R2);if(which===1){if(sp.i===j)j=i;i=sp.i;}else{if(sp.i===i)i=j;j=sp.i;}
+ r.g.rsel={ref:b.id,i,j};S.selPt=null;say('✅ '+(which===1?'R1':'R2')+' déplacé sur cet angle.','ok');refresh();}
+$('r1Btn').onclick=()=>setR(1);$('r2Btn').onclick=()=>setR(2);
+$('delBtn').onclick=()=>{const sp=S.selPt;if(!sp)return;const b=S.blds[sp.b];if(b.type!=='jaune'||b.pts.length<=3)return;snap();b.pts.splice(sp.i,1);shiftR(b.id,sp.i,false);S.selPt=null;refresh();};
 // toucher un côté jaune (hors rond) : on y ajoute un angle
 function editTap(e){if(e.target.closest('.hdl')||(S.tapped&&Date.now()-S.tapped<400)||S.panMoved)return;const p=evPt(e);const u=1/Math.max(0.05,S.zoom);const rows=compute();const one=S.sel>0;
  const focus=new Set();rows.filter(r=>!one||r.n===S.sel).forEach(r=>{if(r.ref)focus.add(r.ref.id);});let best=null;
  S.blds.forEach(b=>{if(!b.on||b.type!=='jaune'||(one&&!focus.has(b.id)))return;const P=b.pts.map(V);for(let i=0;i<P.length;i++){const a=P[i],c=P[(i+1)%P.length];const d=segDist(p,a,c);if(d<=16*u&&(!best||d<best.d))best={b,i,d};}});
- if(!best)return;snap();best.b.pts.splice(best.i+1,0,S.vp.convertToPdfPoint(p[0],p[1]));shiftR(best.b.id,best.i+1,true);refresh();}
+ if(!best){if(S.selPt){S.selPt=null;refresh();}return;}snap();S.selPt=null;best.b.pts.splice(best.i+1,0,S.vp.convertToPdfPoint(p[0],p[1]));shiftR(best.b.id,best.i+1,true);refresh();}
 // zoom et déplacement
 function setZoom(z,cx,cy){const w=$('viewWrap');const ox=(w.scrollLeft+(cx??w.clientWidth/2))/S.zoom,oy=(w.scrollTop+(cy??w.clientHeight/2))/S.zoom;S.zoom=Math.max(0.05,Math.min(4,z));$('stage').style.transform='scale('+S.zoom+')';$('stage').style.width=$('cv').width+'px';const sp=$('spacer')||(()=>{const d=document.createElement('div');d.id='spacer';d.style.cssText='position:absolute;left:0;top:0;pointer-events:none';$('viewWrap').appendChild(d);return d;})();sp.style.width=($('cv').width*S.zoom)+'px';sp.style.height=($('cv').height*S.zoom)+'px';w.scrollLeft=ox*S.zoom-(cx??w.clientWidth/2);w.scrollTop=oy*S.zoom-(cy??w.clientHeight/2);if(S.page&&S.blds)drawOverlay(compute());}
 function fitZoom(){const w=$('viewWrap');setZoom(Math.min(w.clientWidth/$('cv').width,w.clientHeight/$('cv').height));}
