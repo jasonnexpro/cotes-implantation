@@ -34,27 +34,28 @@ select,input{font:14px Arial;padding:6px 8px;border:1px solid #c9d8cf;border-rad
 label.chk{display:flex;gap:6px;align-items:center;font-size:13px}
 .bar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.bbtn{border:1px solid var(--line);background:#fff;color:var(--g);border-radius:10px;padding:8px 14px;font:700 14px Arial;cursor:pointer;min-height:40px}.bbtn.on{background:var(--g2);color:#fff;border-color:var(--g2)}
 .btn.act{background:#1d63d8;color:#fff;border-color:#1d63d8}
+.editbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 8px}.editbar .btn{min-height:44px;font-size:15px}
+#editHelp{flex-basis:100%;margin:0}
 </style></head><body>
-<header><h1>📏 Cotes d'implantation</h1><p>Dépose le plan (PDF au 1:1000) : bâtiments verts à implanter, bâtiments jaunes existants. Le plan reste sur ton appareil.</p></header>
+<header><h1>📏 Cotes d'implantation</h1><p>Dépose le plan (PDF au 1:1000) : bâtiments verts (ou gris quadrillés) à implanter, bâtiments jaunes existants. Le plan reste sur ton appareil.</p></header>
 <main>
  <section class="card" style="min-width:0">
   <div id="drop"><p><b>Glisse le plan ici</b> ou</p><input type="file" id="file" accept="application/pdf"><p class="small">Échelle : <input id="scaleDen" type="number" value="1000" style="width:90px"> (1:1000 par défaut)</p></div>
   <div id="status"></div>
-  <div id="bar" class="bar"></div><div id="viewWrap" hidden><div class="zoom"><button type="button" id="rot" title="Tourner le plan">↻</button><button type="button" id="zin" title="Zoomer">＋</button><button type="button" id="zout" title="Dézoomer">−</button><button type="button" id="zfit" title="Tout voir">⤢</button></div><div id="stage"><canvas id="cv"></canvas><svg id="ov" xmlns="http://www.w3.org/2000/svg"></svg></div></div>
-  <p class="small" id="hint" hidden>Choisis un bâtiment avec les boutons au-dessus du plan (ou touche-le sur le plan). ↻ tourne le plan. <b>Ajuster les angles</b> permet de déplacer un angle en le faisant glisser (utile pour les plans en image).</p>
+  <div id="bar" class="bar"></div>
+  <div id="edit" class="editbar" hidden><button type="button" class="btn sec" id="editBtn">✋ Corriger les angles</button><button type="button" class="btn sec" id="undoBtn" hidden>↺ Annuler</button><button type="button" class="btn sec" id="rectBtn" hidden>▭ Jaune en rectangle</button><p id="editHelp" class="msg warn" hidden></p></div>
+  <div id="viewWrap" hidden><div class="zoom"><button type="button" id="rot" title="Tourner le plan">↻</button><button type="button" id="zin" title="Zoomer">＋</button><button type="button" id="zout" title="Dézoomer">−</button><button type="button" id="zfit" title="Tout voir">⤢</button></div><div id="stage"><canvas id="cv"></canvas><svg id="ov" xmlns="http://www.w3.org/2000/svg"></svg></div></div>
+  <p class="small" id="hint" hidden>Choisis un bâtiment avec les boutons au-dessus du plan (ou touche-le sur le plan). ↻ tourne le plan. <b>✋ Corriger les angles</b> permet de déplacer un angle et de choisir les angles R1 et R2 (utile pour les plans en image).</p>
  </section>
  <aside>
   <div class="card" id="panel" hidden>
    <h2>Bâtiments</h2>
    <div id="kind"></div>
-   <div class="row" style="margin:6px 0"><label class="chk"><input type="checkbox" id="adjust"> Ajuster les angles</label></div>
    <div id="blds"></div>
    <h2 style="margin-top:12px">Contrôle d'échelle</h2>
-   <p class="small" style="margin:0 0 6px">Compare les côtés trouvés avec les cotes écrites sur le plan.<br>• <b>Un seul</b> bâtiment est faux (angle caché par une étiquette) : coche <b>Ajuster les angles</b> et déplace l’angle.<br>• <b>Tous</b> sont faux dans la même proportion (plan imprimé à une autre échelle) : tape ici la longueur réelle d’un côté, toutes les cotes sont corrigées.</p>
+   <p class="small" style="margin:0 0 6px">Compare les côtés trouvés avec les cotes écrites sur le plan.<br>• <b>Un seul</b> bâtiment est faux (angle caché par une étiquette) : touche <b>✋ Corriger les angles</b> et déplace l’angle.<br>• <b>Tous</b> sont faux dans la même proportion (plan imprimé à une autre échelle) : tape ici la longueur réelle d’un côté, toutes les cotes sont corrigées.</p>
    <div class="row"><select id="calSide"></select><input id="calLen" type="number" step="0.01" placeholder="ex. 36,20" style="width:110px"><button class="btn sec" type="button" id="calOk">Appliquer</button></div>
    <div id="calInfo" class="small"></div>
-   <h2 style="margin-top:12px">Cotes à prendre au décamètre</h2>
-   <div id="table"></div>
    <div class="row" style="margin-top:10px"><button class="btn" type="button" id="pdfBtn">📄 Télécharger le plan coté (PDF)</button></div>
   </div>
  </aside>
@@ -98,7 +99,7 @@ async function load(bytes){S.bytes=bytes;say('⏳ Lecture du plan…','warn');
  await render();
  if(S.kind==='vecteur')S.blds=fromVector(shapes);else if(S.kind==='image')S.blds=await fromImage();else S.blds=[];
  S.blds.forEach((b,i)=>b.id=i);S.k=1;dropIsolated();autoChain();
- $('viewWrap').hidden=false;$('panel').hidden=false;$('hint').hidden=false;
+ $('viewWrap').hidden=false;$('panel').hidden=false;$('hint').hidden=false;$('edit').hidden=false;S.edit=false;S.undo=[];S.rpick=null;
  $('kind').innerHTML=S.kind==='vecteur'?'<div class="msg ok">✅ Plan dessiné : les angles sont lus exactement.</div>':S.kind==='image'?'<div class="msg warn">⚠️ Plan en <b>image</b> : les angles sont repérés par la couleur. Vérifie-les (et ajuste-les si besoin), puis fais le <b>contrôle d’échelle</b> avec une cote du plan.</div>':'';
  const nv=S.blds.filter(b=>b.type==='vert'&&b.on).length,nj=S.blds.filter(b=>b.type==='jaune'&&b.on).length;
  say(nv?('✅ '+nv+' bâtiment'+(nv>1?'s':'')+' vert'+(nv>1?'s':'')+' et '+nj+' jaune'+(nj>1?'s':'')+' trouvés.'):'Aucun bâtiment vert trouvé sur ce plan.',nv?'ok':'err');
@@ -111,37 +112,180 @@ function fromVector(shapes){const out=[];const min=9*m2pt()*m2pt();
   out.push({type:s.type,pts:P,on:!inMargin(P)&&rect,ref:null,face:null});}// forme verte non rectangulaire (encart, symbole) : ignorée d'office
  // fusion des doublons (même forme dessinée deux fois)
  return out.filter((b,i)=>!out.some((c,j)=>j<i&&c.type===b.type&&b.pts.length===c.pts.length&&b.pts.every(p=>c.pts.some(q=>dist(p,q)<0.2*m2pt()))));}
-async function fromImage(){// repérage par la couleur, avec « ouverture » pour enlever les haies et traits fins
+async function fromImage(){// repérage par la couleur ; jaunes : vrai contour d'équerre ; étiquettes repérées
  const v=S.page.getViewport({scale:1});const sc=Math.min(6,Math.sqrt(15e6/(v.width*v.height)));const vp=S.page.getViewport({scale:sc});
  const c=document.createElement('canvas');c.width=Math.floor(vp.width);c.height=Math.floor(vp.height);await S.page.render({canvasContext:c.getContext('2d'),viewport:vp,intent:'print'}).promise;
  const W=c.width,H=c.height,d=c.getContext('2d').getImageData(0,0,W,H).data;const pxPerM=m2pt()*sc;
- const cls=new Uint8Array(W*H);for(let i=0,j=0;j<W*H;i+=4,j++){const r=d[i],g=d[i+1],b=d[i+2];cls[j]=(g>110&&r<100&&b<100&&g-r>55)?1:(r>215&&g>165&&g<235&&b<160&&r-b>90)?2:0;}
- const rad=Math.max(2,Math.round(0.9*pxPerM));// enlève tout ce qui fait moins de 1,8 m de large (haies, traits)
- // Morphologie rapide (fenêtre glissante) : « ouverture » = érosion puis dilatation ; enlève les haies et traits fins de la même couleur.
- const pass=(src,erode,horiz)=>{const o=new Uint8Array(W*H),n=2*rad+1,L=horiz?W:H,M=horiz?H:W;
+ const cls=new Uint8Array(W*H);for(let i=0,j=0;j<W*H;i+=4,j++){const r=d[i],g=d[i+1],b=d[i+2];const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
+  cls[j]=(g>110&&r<100&&b<100&&g-r>55)?1:(r>215&&g>165&&g<246&&b<160&&r-b>90)?2:((mx<150&&mn>35&&mx-mn<45&&b>=r-5)||(r>80&&r<170&&r-g>30&&r-b>30&&g<110))?3:0;}// 3 : gris quadrillé (ou sa bande marron) = projet sur certains plans
+ const pass=(src,erode,horiz,rad)=>{const o=new Uint8Array(W*H),n=2*rad+1,L=horiz?W:H,M=horiz?H:W;
   for(let m=0;m<M;m++){let s=0;const base=horiz?m*W:m,step=horiz?1:W;for(let i=0;i<rad&&i<L;i++)s+=src[base+i*step];
    for(let i=0;i<L;i++){const a=i+rad;if(a<L)s+=src[base+a*step];const b=i-rad-1;if(b>=0)s-=src[base+b*step];o[base+i*step]=erode?(s===n?1:0):(s>0?1:0);}}return o;};
- const openM=m=>{const e=pass(pass(m,true,true),true,false);return pass(pass(e,false,true),false,false);};
+ const ero=(m,r)=>pass(pass(m,true,true,r),true,false,r),dil=(m,r)=>pass(pass(m,false,true,r),false,false,r);
+ // étiquettes : cases blanches (moins de 400 m²) qui contiennent du texte foncé ; elles peuvent cacher un bout de bâtiment
+ const occ=new Uint8Array(W*H);{const wl=new Int32Array(W*H),qq=new Int32Array(W*H);let id=0;const maxA=400*pxPerM*pxPerM,minS=0.8*pxPerM,ex=Math.round(0.3*pxPerM);
+  const white=j=>d[4*j]>235&&d[4*j+1]>235&&d[4*j+2]>235,dark=j=>d[4*j]<110&&d[4*j+1]<110&&d[4*j+2]<110;
+  for(let i=0;i<W*H;i++){if(wl[i]||!white(i))continue;id++;let qs=0,qe=0;qq[qe++]=i;wl[i]=id;let n=0,x0=1e9,y0=1e9,x1=0,y1=0,big=false;
+   while(qs<qe){const j=qq[qs++];n++;const x=j%W,y=(j/W)|0;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;if(n>maxA)big=true;
+    if(x>0&&!wl[j-1]&&white(j-1)){wl[j-1]=id;qq[qe++]=j-1;}if(x<W-1&&!wl[j+1]&&white(j+1)){wl[j+1]=id;qq[qe++]=j+1;}if(j>=W&&!wl[j-W]&&white(j-W)){wl[j-W]=id;qq[qe++]=j-W;}if(j<W*(H-1)&&!wl[j+W]&&white(j+W)){wl[j+W]=id;qq[qe++]=j+W;}}
+   if(big)continue;const bw=x1-x0+1,bh=y1-y0+1;if(bw<minS||bh<minS||n<0.5*bw*bh)continue;
+   // une étiquette ne contient que du blanc, du noir et du gris (pas de traits de couleur), avec un peu de texte
+   let dk=0,col=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const j=y*W+x;if(dark(j))dk++;const r=d[4*j],g=d[4*j+1],b=d[4*j+2];if(Math.max(r,g,b)-Math.min(r,g,b)>40)col++;}
+   if(dk<0.03*bw*bh||col>0.08*bw*bh)continue;
+   for(let y=Math.max(0,y0-ex);y<=Math.min(H-1,y1+ex);y++)for(let x=Math.max(0,x0-ex);x<=Math.min(W-1,x1+ex);x++)occ[y*W+x]=1;}}
+ const rOpen=Math.max(2,Math.round(0.9*pxPerM)),rClose=Math.max(1,Math.round(0.6*pxPerM));
  const out=[],gap=1.5*pxPerM,minPx=9*pxPerM*pxPerM;
- for(const k of [1,2]){const mask=new Uint8Array(W*H);for(let j=0;j<W*H;j++)mask[j]=cls[j]===k?1:0;const om=openM(mask);
-  // morceaux restants (un bâtiment peut être coupé par des étiquettes ou des traits)
+ // bord recalé : pour chaque côté, on cherche où la couleur s'arrête vraiment (médiane de nombreux relevés)
+ let src=cls;const at=(x,y)=>{x=Math.round(x);y=Math.round(y);return x>=0&&y>=0&&x<W&&y<H?src[y*W+x]:0;};
+ const refine=(P,k)=>{const n=P.length;let cx=0,cy=0;P.forEach(p=>{cx+=p[0];cy+=p[1];});cx/=n;cy/=n;const lines=[];
+  for(let i=0;i<n;i++){const a=P[i],b=P[(i+1)%n],L=dist(a,b);const ux=(b[0]-a[0])/L,uy=(b[1]-a[1])/L;let nx=-uy,ny=ux;const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;if((mx-cx)*nx+(my-cy)*ny<0){nx=-nx;ny=-ny;}
+   const offs=[];const lo=-1.2*pxPerM,hi=1.2*pxPerM;for(let s=L*0.08;s<=L*0.92;s+=1.5){const px=a[0]+ux*s,py=a[1]+uy*s;if(at(px+nx*lo,py+ny*lo)!==k)continue;let last=null;
+    for(let o=lo;o<=hi;o+=0.5){if(at(px+nx*o,py+ny*o)===k)last=o;else if(last!==null&&o-last>0.6*pxPerM)break;}if(last!==null)offs.push(last+0.5);}
+   offs.sort((x,y)=>x-y);const md=offs.length>=8?offs[offs.length>>1]:0;lines.push({p:[a[0]+nx*md,a[1]+ny*md],u:[ux,uy],n:offs.length,md});}
+  const X=(l1,l2)=>{const det=l1.u[0]*(-l2.u[1])-l1.u[1]*(-l2.u[0]);if(Math.abs(det)<1e-6)return null;const dx=l2.p[0]-l1.p[0],dy=l2.p[1]-l1.p[1];const t=(dx*(-l2.u[1])-dy*(-l2.u[0]))/det;return [l1.p[0]+l1.u[0]*t,l1.p[1]+l1.u[1]*t];};
+  const Q=[];for(let i=0;i<n;i++){const q=X(lines[(i-1+n)%n],lines[i]);if(!q||dist(q,P[i])>1.5*pxPerM)return P;Q.push(q);}return Q;};
+ // contour extérieur d'une tache (suivi de bord, 8 voisins)
+ const trace=(B,w,h)=>{let s=-1;for(let i=0;i<w*h;i++)if(B[i]){s=i;break;}if(s<0)return [];const D=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  const get=(x,y)=>x>=0&&y>=0&&x<w&&y<h&&B[y*w+x];let x=s%w,y=(s/w)|0;const sx=x,sy=y;let dir=7;const C=[];let guard=0;
+  do{C.push([x,y]);let found=false;for(let k=0;k<8;k++){const dd=(dir+6+k)%8;const nx=x+D[dd][0],ny=y+D[dd][1];if(get(nx,ny)){x=nx;y=ny;dir=dd;found=true;break;}}if(!found)break;}while((x!==sx||y!==sy)&&++guard<1e6);return C;};
+ const dp=(P,tol)=>{if(P.length<3)return P.slice();let mi=0,md=-1;const a=P[0],b=P[P.length-1];for(let i=1;i<P.length-1;i++){const dd=segDist(P[i],a,b);if(dd>md){md=dd;mi=i;}}if(md<=tol)return [a,b];return dp(P.slice(0,mi+1),tol).slice(0,-1).concat(dp(P.slice(mi),tol));};
+ const dpClosed=(C,tol)=>{// on coupe le contour au point le plus éloigné du départ
+  let far=0,fd=-1;C.forEach((p,i)=>{const dd=dist(p,C[0]);if(dd>fd){fd=dd;far=i;}});const A=dp(C.slice(0,far+1),tol),B=dp(C.slice(far).concat([C[0]]),tol);return A.slice(0,-1).concat(B.slice(0,-1));};
+ // contour simplifié puis redressé (angles droits quand le côté est presque d'équerre)
+ const outline=(C)=>{const tol=0.45*pxPerM;let P=dpClosed(C,tol);if(P.length<3)return null;
+  let sx=0,sy=0;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length],L=dist(a,b),an=Math.atan2(b[1]-a[1],b[0]-a[0]);sx+=L*Math.cos(4*an);sy+=L*Math.sin(4*an);}const th=Math.atan2(sy,sx)/4;
+  // côtés : direction redressée si à moins de 12° d'une direction principale ; position = médiane des points du contour
+  const idx=P.map(p=>C.findIndex(q=>q[0]===p[0]&&q[1]===p[1]));let E=[];
+  for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];let an=Math.atan2(b[1]-a[1],b[0]-a[0]);let rel=an-th;rel=Math.atan2(Math.sin(rel),Math.cos(rel));const q=Math.round(rel/(Math.PI/2));const snap=Math.abs(rel-q*Math.PI/2)<12*Math.PI/180;
+   const ua=snap?th+q*Math.PI/2:an;const u=[Math.cos(ua),Math.sin(ua)],nrm=[-u[1],u[0]];
+   const i0=idx[i],i1=idx[(i+1)%P.length];const pts=[];if(i0>=0&&i1>=0){let j=i0;while(j!==i1){pts.push(C[j]);j=(j+1)%C.length;}pts.push(C[i1]);}
+   const L=dist(a,b);const inner=pts.filter(p=>{const t=(p[0]-a[0])*u[0]+(p[1]-a[1])*u[1];return t>L*0.15&&t<L*0.85;});const use=inner.length>=4?inner:[a,b];
+   const os=use.map(p=>p[0]*nrm[0]+p[1]*nrm[1]).sort((x,y)=>x-y);const o=os[os.length>>1];E.push({u,nrm,o,L,snap,ua});}
+  // côtés consécutifs parallèles et presque confondus : fusion
+  let ch=true;while(ch&&E.length>3){ch=false;for(let i=0;i<E.length;i++){const e=E[i],f=E[(i+1)%E.length];const par=Math.abs(e.u[0]*f.u[1]-e.u[1]*f.u[0])<0.03&&e.u[0]*f.u[0]+e.u[1]*f.u[1]>0;
+   if(par&&Math.abs(e.o-f.o)<0.6*pxPerM){e.o=(e.o*e.L+f.o*f.L)/(e.L+f.L);e.L+=f.L;E.splice((i+1)%E.length,1);ch=true;break;}}}
+  const X=(e,f)=>{const det=e.u[0]*f.u[1]-e.u[1]*f.u[0];if(Math.abs(det)<0.05)return null;// intersection des droites n·p=o
+   const a1=e.nrm[0],b1=e.nrm[1],a2=f.nrm[0],b2=f.nrm[1],dd=a1*b2-a2*b1;return [(e.o*b2-f.o*b1)/dd,(a1*f.o-a2*e.o)/dd];};
+  let Q=[];for(let i=0;i<E.length;i++){const q=X(E[(i-1+E.length)%E.length],E[i]);if(q)Q.push(q);}
+  // petits côtés (< 1 m) : retirés
+  ch=true;while(ch&&Q.length>3){ch=false;for(let i=0;i<Q.length;i++)if(dist(Q[i],Q[(i+1)%Q.length])<1*pxPerM){Q.splice(i,1);ch=true;break;}}
+  return Q.length>=3?Q:null;};
+ // contour « à l'équerre » : la tache est redressée dans l'axe du bâtiment, posée sur une grille de 25 cm, lissée
+ // (encoches d'étiquettes bouchées, traits fins retirés) puis son bord est suivi : uniquement des côtés d'équerre.
+ const box=(src,w,h,r,erode)=>{let o=src;for(const horiz of [true,false]){const t=new Uint8Array(w*h),n=2*r+1,L=horiz?w:h,M=horiz?h:w;for(let mm=0;mm<M;mm++){let s=0;const base=horiz?mm*w:mm,step=horiz?1:w;for(let i=0;i<r&&i<L;i++)s+=o[base+i*step];for(let i=0;i<L;i++){const a=i+r;if(a<L)s+=o[base+a*step];const b=i-r-1;if(b>=0)s-=o[base+b*step];t[base+i*step]=erode?(s===n?1:0):(s>0?1:0);}}o=t;}return o;};
+ const ortho=(C,B,w,h,ox,oy)=>{const P=dpClosed(C,1.0*pxPerM);let sx=0,sy=0;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length],L=dist(a,b);if(L<2*pxPerM)continue;const an=Math.atan2(b[1]-a[1],b[0]-a[0]);sx+=L*Math.cos(4*an);sy+=L*Math.sin(4*an);}
+  // angle affiné : celui où les points du bord s'empilent le mieux sur des droites (histogrammes les plus « pointus »)
+  const score=t=>{const c=Math.cos(t),s=Math.sin(t),bw=0.25*pxPerM,hu=new Map(),hv=new Map();for(let i=0;i<C.length;i+=2){const p=C[i];const a=Math.round((p[0]*c+p[1]*s)/bw),b=Math.round((-p[0]*s+p[1]*c)/bw);hu.set(a,(hu.get(a)||0)+1);hv.set(b,(hv.get(b)||0)+1);}let z=0;for(const x of hu.values())z+=x*x;for(const x of hv.values())z+=x*x;return z;};
+  let t0=Math.atan2(sy,sx)/4,bs=-1,th=t0;for(let d=-4;d<=4.001;d+=0.1){const t=t0+d*Math.PI/180,z=score(t);if(z>bs){bs=z;th=t;}}
+  {const t1=th;for(let d=-0.1;d<=0.1001;d+=0.01){const t=t1+d*Math.PI/180,z=score(t);if(z>bs){bs=z;th=t;}}}
+  const co=Math.cos(th),si=Math.sin(th),cs=0.25*pxPerM,mg=4*pxPerM;let u0=1e18,u1=-1e18,v0=1e18,v1=-1e18;
+  for(const p of C){const u=p[0]*co+p[1]*si,v=-p[0]*si+p[1]*co;u0=Math.min(u0,u);u1=Math.max(u1,u);v0=Math.min(v0,v);v1=Math.max(v1,v);}u0-=mg;v0-=mg;u1+=mg;v1+=mg;
+  const gw=Math.ceil((u1-u0)/cs),gh=Math.ceil((v1-v0)/cs);let G=new Uint8Array(gw*gh);
+  for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){const u=u0+(i+0.5)*cs,v=v0+(j+0.5)*cs;const x=Math.round(u*co-v*si-ox),y=Math.round(u*si+v*co-oy);if(x>=0&&y>=0&&x<w&&y<h&&B[y*w+x])G[j*gw+i]=1;}
+  const rc=Math.round(1.6/0.25),ro=Math.round(1.0/0.25);G=box(box(G,gw,gh,rc,false),gw,gh,rc,true);G=box(box(G,gw,gh,ro,true),gw,gh,ro,false);
+  // plus grande tache seulement
+  const lb=new Int32Array(gw*gh);let best=0,bestN=0,id=0;const st=[];for(let s=0;s<gw*gh;s++){if(!G[s]||lb[s])continue;id++;let n=0;st.push(s);lb[s]=id;while(st.length){const j=st.pop();n++;const x=j%gw;for(const jj of [x>0?j-1:-1,x<gw-1?j+1:-1,j-gw,j+gw])if(jj>=0&&jj<gw*gh&&G[jj]&&!lb[jj]){lb[jj]=id;st.push(jj);}}if(n>bestN){bestN=n;best=id;}}
+  if(!best)return null;const F=(i,j)=>i>=0&&j>=0&&i<gw&&j<gh&&lb[j*gw+i]===best;
+  // bords entre cases (sens : l'intérieur à droite), puis chaînage
+  const nxt=new Map();const key=(i,j)=>i*100000+j;
+  for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){if(!F(i,j))continue;if(!F(i,j-1))nxt.set(key(i,j),[i+1,j]);if(!F(i+1,j))nxt.set(key(i+1,j),[i+1,j+1]);if(!F(i,j+1))nxt.set(key(i+1,j+1),[i,j+1]);if(!F(i-1,j))nxt.set(key(i,j+1),[i,j]);}
+  let start=null;for(let j=0;j<gh&&!start;j++)for(let i=0;i<gw;i++)if(F(i,j)){start=[i,j];break;}
+  const L=[];let cur=start,guard=0;do{L.push(cur);cur=nxt.get(key(cur[0],cur[1]));}while(cur&&(cur[0]!==start[0]||cur[1]!==start[1])&&++guard<1e6);if(!cur)return null;
+  const clean=A=>A.filter((p,k)=>{const a=A[(k-1+A.length)%A.length],b=A[(k+1)%A.length];return !((a[0]===p[0]&&p[0]===b[0])||(a[1]===p[1]&&p[1]===b[1]));});
+  let V=clean(L);
+  // petites marches (moins de 0,8 m) entre deux côtés parallèles de même sens : effet de la grille, on les efface
+  const mstep=0.8/0.25;let ch=true;while(ch&&V.length>4){ch=false;const n=V.length;
+   for(let k=0;k<n;k++){const a=V[(k-1+n)%n],p=V[k],q=V[(k+1)%n],b=V[(k+2)%n];const len=Math.abs(q[0]-p[0])+Math.abs(q[1]-p[1]);if(len>=mstep)continue;
+    const d1=[Math.sign(p[0]-a[0]),Math.sign(p[1]-a[1])],d2=[Math.sign(b[0]-q[0]),Math.sign(b[1]-q[1])];if(d1[0]!==d2[0]||d1[1]!==d2[1])continue;
+    const ax=d1[0]!==0?1:0;// côtés horizontaux (ax=1 : on aligne y) ou verticaux (ax=0 : on aligne x)
+    const l1=Math.abs(p[0]-a[0])+Math.abs(p[1]-a[1]),l2=Math.abs(b[0]-q[0])+Math.abs(b[1]-q[1]);
+    if(l1>=l2)b[ax]=p[ax];else a[ax]=q[ax];
+    const keep=V.filter((_,i)=>i!==k&&i!==(k+1)%n);V=clean(keep);ch=true;break;}
+   if(ch)continue;
+   // petite encoche ou bosse sur un mur droit (étiquette posée sur le bord) : moins de 3,5 m de large et 2,5 m de profond
+   for(let k=0;k<n&&n>6;k++){const P0=V[(k-1+n)%n],P1=V[k],P2=V[(k+1)%n],P3=V[(k+2)%n],P4=V[(k+3)%n];
+    const len=(a,b)=>Math.abs(b[0]-a[0])+Math.abs(b[1]-a[1]);const dir=(a,b)=>[Math.sign(b[0]-a[0]),Math.sign(b[1]-a[1])];
+    const dA=dir(P0,P1),d1=dir(P1,P2),dW=dir(P2,P3),d2=dir(P3,P4);
+    if(dA[0]!==dW[0]||dA[1]!==dW[1])continue;if(d1[0]!==-d2[0]||d1[1]!==-d2[1])continue;
+    if(len(P2,P3)>3.5/0.25||len(P1,P2)>2.5/0.25||len(P3,P4)>2.5/0.25)continue;
+    const ax=dA[0]!==0?1:0;if(Math.abs(P1[ax]-P4[ax])>0.5/0.25)continue;
+    const idx=[k,(k+1)%n,(k+2)%n];const nb=V[(k+4)%n];if(nb)nb[ax]=P1[ax];// le mur reprend son alignement
+    V=clean(V.filter((_,i)=>!idx.includes(i)&&i!==(k+3)%n));ch=true;break;}
+   if(ch)continue;
+   // escalier de petites marches (bord d'une étiquette posée de travers) entre deux murs d'équerre : on prolonge les deux murs
+   // (signature d'une étiquette : marches de moins de 3 m qui suivent une droite horizontale ou verticale de la page)
+   const sl=3/0.25,E=k=>{const a=V[k%n],b=V[(k+1)%n];return Math.abs(b[0]-a[0])+Math.abs(b[1]-a[1]);};
+   const pageAxis=(p,q)=>{const an=Math.atan2(q[1]-p[1],q[0]-p[0])+th;let r=Math.abs(an%(Math.PI/2));r=Math.min(r,Math.PI/2-r);return r<6*Math.PI/180;};
+   for(let s=0;s<n&&!ch;s++){if(E(s+n-1)<sl||E(s)>=sl)continue;let t=s;while(t<s+n&&E(t)<sl)t++;const cnt=t-s;if(cnt<4||cnt>n-3)continue;
+    const a0=V[(s+n-1)%n],a1=V[s%n],b0=V[t%n],b1=V[(t+1)%n];const hA=a0[1]===a1[1],hB=b0[1]===b1[1];if(hA===hB)continue;
+    if(!pageAxis(a1,b0))continue;let off=0;for(let i=s+1;i<t;i++)off=Math.max(off,segDist(V[i%n],a1,b0));if(off>1.4/0.25)continue;
+    const cx=hA?b0[0]:a1[0],cy=hA?a1[1]:b0[1];const drop=new Set();for(let i=s;i<=t;i++)drop.add(i%n);
+    const NV=[];for(let i=0;i<n;i++){if(i===s%n)NV.push([cx,cy]);if(!drop.has(i))NV.push(V[i]);}V=clean(NV);ch=true;}}
+  // côtés cachés par une étiquette : les murs voisins sont prolongés (tout droit, ou jusqu'à leur angle)
+  const occAt=(fi,fj)=>{const u=u0+fi*cs,v=v0+fj*cs;const x=Math.round(u*co-v*si),y=Math.round(u*si+v*co);return x>=0&&y>=0&&x<W&&y<H&&occ[y*W+x]===1;};
+  const isOcc=k=>{const n=V.length,a=V[k%n],b=V[(k+1)%n];const dx=Math.sign(b[0]-a[0]),dy=Math.sign(b[1]-a[1]),ex=dy,ey=-dx;const L=Math.abs(b[0]-a[0])+Math.abs(b[1]-a[1]);let hit=0,tot=0;
+   for(let s=0;s<L;s++){const pi=a[0]+dx*(s+0.5),pj=a[1]+dy*(s+0.5);tot++;if(occAt(pi+ex*0.5,pj+ey*0.5)||occAt(pi+ex*1.5,pj+ey*1.5)||occAt(pi+ex*3,pj+ey*3))hit++;}return tot&&hit/tot>=0.6;};
+  for(let guard=0;guard<20;guard++){const n=V.length;if(n<5)break;const O=V.map((_,k)=>isOcc(k));if(O.every(x=>x)||!O.some(x=>x))break;let done=false;
+   for(let s=0;s<n&&!done;s++){if(!O[s]||O[(s-1+n)%n])continue;let t=s;while(O[t%n])t++;
+    const a0=V[(s-1+n)%n],a1=V[s%n],b0=V[t%n],b1=V[(t+1)%n];const dA=[Math.sign(a1[0]-a0[0]),Math.sign(a1[1]-a0[1])],dB=[Math.sign(b1[0]-b0[0]),Math.sign(b1[1]-b0[1])];
+    const drop=new Set();for(let i=s;i<=t;i++)drop.add(i%n);let ins=null;
+    if(dA[0]*dB[0]+dA[1]*dB[1]===0){ins=dA[0]!==0?[b0[0],a1[1]]:[a1[0],b0[1]];let near=1e9;for(const i of drop)near=Math.min(near,Math.hypot(V[i][0]-ins[0],V[i][1]-ins[1]));if(near>10/0.25)continue;}
+    else if(dA[0]===dB[0]&&dA[1]===dB[1]){const ax=dA[0]!==0?1:0;if(Math.abs(a1[ax]-b0[ax])>1/0.25)continue;b1[ax]=a1[ax];}
+    else continue;
+    const NV=[];for(let i=0;i<n;i++){if(i===s%n&&ins)NV.push(ins);if(!drop.has(i))NV.push(V[i]);}if(NV.length<4)continue;V=clean(NV);done=true;}
+   if(!done)break;}
+  return V.map(([i,j])=>{const u=u0+i*cs,v=v0+j*cs;return [u*co-v*si,u*si+v*co];});};
+ // recalage des côtés d'un polygone quelconque (le côté extérieur est trouvé par un test « dedans / dehors »)
+ const inPoly=(p,P)=>{let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const a=P[i],b=P[j];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])c=!c;}return c;};
+ const refineP=(P,k)=>{const n=P.length;const lines=[];
+  for(let i=0;i<n;i++){const a=P[i],b=P[(i+1)%n],L=dist(a,b);const ux=(b[0]-a[0])/L,uy=(b[1]-a[1])/L;let nx=-uy,ny=ux;const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;if(inPoly([mx+nx*2,my+ny*2],P)){nx=-nx;ny=-ny;}
+   const offs=[];if(L>=2*pxPerM){const lo=-1.0*pxPerM,hi=1.0*pxPerM;for(let s=L*0.1;s<=L*0.9;s+=1.5){const px=a[0]+ux*s,py=a[1]+uy*s;if(at(px+nx*lo,py+ny*lo)!==k)continue;let last=null;
+    for(let o=lo;o<=hi;o+=0.5){if(at(px+nx*o,py+ny*o)===k)last=o;else if(last!==null&&o-last>0.6*pxPerM)break;}if(last!==null)offs.push(last+0.5);}}
+   offs.sort((x,y)=>x-y);const md=offs.length>=8?offs[offs.length>>1]:0;lines.push({p:[a[0]+nx*md,a[1]+ny*md],u:[ux,uy]});}
+  const X=(l1,l2)=>{const det=l1.u[0]*(-l2.u[1])-l1.u[1]*(-l2.u[0]);if(Math.abs(det)<1e-6)return null;const dx=l2.p[0]-l1.p[0],dy=l2.p[1]-l1.p[1];const t=(dx*(-l2.u[1])-dy*(-l2.u[0]))/det;return [l1.p[0]+l1.u[0]*t,l1.p[1]+l1.u[1]*t];};
+  const Q=[];for(let i=0;i<n;i++){const q=X(lines[(i-1+n)%n],lines[i]);if(!q||dist(q,P[i])>1.5*pxPerM)return P;Q.push(q);}return Q;};
+ for(const k of [1,2]){const mask=new Uint8Array(W*H);for(let j=0;j<W*H;j++)mask[j]=cls[j]===k?1:0;const om=dil(ero(mask,rOpen),rOpen);const cm=ero(dil(om,rClose),rClose);
   const lab=new Int32Array(W*H),comps=[];const q=new Int32Array(W*H);
-  for(let i=0;i<W*H;i++){if(!om[i]||lab[i])continue;const id=comps.length+1;let qs=0,qe=0;q[qe++]=i;lab[i]=id;let n=0;const bd=[];let x0=1e9,y0=1e9,x1=0,y1=0;
+  for(let i=0;i<W*H;i++){if(!cm[i]||lab[i])continue;const id=comps.length+1;let qs=0,qe=0;q[qe++]=i;lab[i]=id;let n=0;const bd=[];let x0=1e9,y0=1e9,x1=0,y1=0;
    while(qs<qe){const j=q[qs++];n++;const x=j%W,y=(j/W)|0;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;let edge=false;
-    for(const jj of [j-1,j+1,j-W,j+W]){const xx=jj%W;if(jj<0||jj>=W*H||Math.abs(xx-x)>1||!om[jj]){edge=true;continue;}if(!lab[jj]){lab[jj]=id;q[qe++]=jj;}}
+    for(const jj of [j-1,j+1,j-W,j+W]){const xx=jj%W;if(jj<0||jj>=W*H||Math.abs(xx-x)>1||!cm[jj]){edge=true;continue;}if(!lab[jj]){lab[jj]=id;q[qe++]=jj;}}
     if(edge)bd.push([x+0.5,y+0.5]);}
-   comps.push({n,bd,box:[x0,y0,x1,y1]});}
-  // regroupement des morceaux proches (moins de 1,5 m)
+   comps.push({id,n,bd,box:[x0,y0,x1,y1]});}
   const par=comps.map((_,i)=>i);const f=i=>par[i]===i?i:(par[i]=f(par[i]));
   const sub=comps.map(c=>c.bd.filter((_,i)=>i%3===0));
   for(let a=0;a<comps.length;a++)for(let b=a+1;b<comps.length;b++){const A=comps[a].box,B=comps[b].box;if(A[0]-gap>B[2]||B[0]-gap>A[2]||A[1]-gap>B[3]||B[1]-gap>A[3])continue;
    let ok=false;for(const p of sub[a]){for(const r of sub[b]){if(Math.abs(p[0]-r[0])<=gap&&Math.abs(p[1]-r[1])<=gap&&dist(p,r)<=gap){ok=true;break;}}if(ok)break;}if(ok)par[f(a)]=f(b);}
-  const groups={};comps.forEach((c,i)=>{const r=f(i);(groups[r]=groups[r]||{n:0,bd:[]});groups[r].n+=c.n;groups[r].bd.push(...c.bd);});
-  for(const g of Object.values(groups)){if(g.n<minPx)continue;const Hh=hull(g.bd);const r=minRect(Hh);const fill=g.n/r.A;
-   let P;if(k===1){if(fill<0.5)continue;P=r.pts;}else{P=fill>0.85?r.pts:simplify(Hh.map(p=>vp.convertToPdfPoint(p[0],p[1]))).map(p=>vp.convertToViewportPoint(p[0],p[1]));}
+  const groups={};comps.forEach((c,i)=>{const r=f(i);(groups[r]=groups[r]||{n:0,bd:[],ids:[],box:[1e9,1e9,0,0]});const G=groups[r];G.n+=c.n;G.bd.push(...c.bd);G.ids.push(c.id);G.box=[Math.min(G.box[0],c.box[0]),Math.min(G.box[1],c.box[1]),Math.max(G.box[2],c.box[2]),Math.max(G.box[3],c.box[3])];});
+  for(const g of Object.values(groups)){if(g.n<minPx)continue;const Hh=hull(g.bd);const r=minRect(Hh);const fill=g.n/r.A;let P,how;
+   if(k===1){if(fill<0.5)continue;P=refine(r.pts,1);how='rect';}
+   else if(fill>0.9){P=refine(r.pts,2);how='rect';}
+   else{// vrai contour : on recopie la tache (morceaux réunis par une fermeture de 0,8 m) et on suit son bord
+    const m=Math.ceil(0.8*pxPerM)+2,[bx0,by0,bx1,by1]=g.box,w=bx1-bx0+1+2*m,h=by1-by0+1+2*m;let B=new Uint8Array(w*h);const ids=new Set(g.ids);
+    for(let y=by0;y<=by1;y++)for(let x=bx0;x<=bx1;x++)if(ids.has(lab[y*W+x]))B[(y-by0+m)*w+(x-bx0+m)]=1;
+    const rr=Math.ceil(0.8*pxPerM);const sq=(src,erode)=>{let o=src;for(const horiz of [true,false]){const t=new Uint8Array(w*h),n=2*rr+1,L=horiz?w:h,M=horiz?h:w;for(let mm=0;mm<M;mm++){let s=0;const base=horiz?mm*w:mm,step=horiz?1:w;for(let i=0;i<rr&&i<L;i++)s+=o[base+i*step];for(let i=0;i<L;i++){const a=i+rr;if(a<L)s+=o[base+a*step];const b=i-rr-1;if(b>=0)s-=o[base+b*step];t[base+i*step]=erode?(s===n?1:0):(s>0?1:0);}}o=t;}return o;};
+    B=sq(sq(B,false),true);const C=trace(B,w,h).map(p=>[p[0]+bx0-m+0.5,p[1]+by0-m+0.5]);let Q=C.length>20?ortho(C,B,w,h,bx0-m,by0-m):null;// surface « trous bouchés » (les étiquettes posées dans le bâtiment comptent dedans)
+    const out0=new Uint8Array(w*h),stk=[];for(let x=0;x<w;x++){stk.push(x,(h-1)*w+x);}for(let y=0;y<h;y++){stk.push(y*w,y*w+w-1);}
+    while(stk.length){const j=stk.pop();if(out0[j]||B[j])continue;out0[j]=1;const x=j%w;if(x>0)stk.push(j-1);if(x<w-1)stk.push(j+1);if(j>=w)stk.push(j-w);if(j<w*(h-1))stk.push(j+w);}
+    let nB=0;for(let i=0;i<w*h;i++)nB+=out0[i]?0:1;
+    // on garde la forme qui recouvre le mieux la tache (rapport intersection / union), à simplicité égale
+    const iou=Z=>{if(!Z)return 0;const Zl=Z.map(p=>[p[0]-(bx0-m),p[1]-(by0-m)]);let I=0,U=0;const n=Zl.length;
+     for(let y=0;y<h;y+=2){const yy=y+0.5,xs=[];for(let i=0,j=n-1;i<n;j=i++){const a=Zl[i],b=Zl[j];if((a[1]>yy)!==(b[1]>yy))xs.push(a[0]+(yy-a[1])*(b[0]-a[0])/(b[1]-a[1]));}xs.sort((p,q)=>p-q);
+      let k2=0;for(let x=0;x<w;x+=2){while(k2<xs.length&&xs[k2]<x+0.5)k2++;const inP=k2%2===1,inB=!out0[y*w+x];const gx=x+bx0-m,gy=y+by0-m;if(!inB&&gx>=0&&gy>=0&&gx<W&&gy<H&&occ[gy*W+gx])continue;if(inP&&inB)I++;if(inP||inB)U++;}}return U?I/U:0;};
+    let Q2=C.length>20?outline(C):null;if(Q2)Q2=refineP(Q2,2);if(Q)Q=refineP(Q,2);
+    const Hs=simplify(Hh.map(p=>vp.convertToPdfPoint(p[0],p[1]))).map(p=>vp.convertToViewportPoint(p[0],p[1]));
+    // le contour d'équerre est préféré (côtés nets) sauf si une autre forme colle nettement mieux
+    const cand=[['equerre',Q],['contour',Q2],['hull',Hs]].filter(x=>x[1]&&x[1].length>=3).map(([nm,Z])=>({nm,Z,s:iou(Z)-0.003*Z.length+(nm==='equerre'?0.04:0)}));cand.sort((a,b)=>b.s-a.s);
+    if(cand.length){P=cand[0].Z;how=cand[0].nm;}else{P=simplify(Hh.map(p=>vp.convertToPdfPoint(p[0],p[1]))).map(p=>vp.convertToViewportPoint(p[0],p[1]));how='hull';}}
    const pdfPts=P.map(p=>vp.convertToPdfPoint(p[0],p[1]));out.push({type:k===1?'vert':'jaune',pts:pdfPts,on:!inMargin(pdfPts),ref:null,face:null});}}
- // Deux morceaux verts de même largeur, bien alignés, séparés par une bande étroite (6 m au plus) où il reste du vert
- // (étiquettes ou traits posés sur le bâtiment) : c'est un seul bâtiment. Deux bâtiments distincts ont du terrain entre eux.
+ // Pas de vert : le projet est peut-être dessiné en gris quadrillé (avec une bande marron). Le quadrillage est bouché
+ // (fermeture 0,5 m), les traits et textes retirés (ouverture 2 m) ; on garde les formes rectangulaires d'au moins 100 m².
+ if(!out.some(o=>o.type==='vert')){const mask=new Uint8Array(W*H);for(let j=0;j<W*H;j++)mask[j]=cls[j]===3?1:0;
+  const rc=Math.max(1,Math.round(0.5*pxPerM)),ro=Math.max(2,Math.round(2*pxPerM));const cm=dil(ero(ero(dil(mask,rc),rc),ro),ro);
+  const lab=new Uint8Array(W*H),st=new Int32Array(W*H);for(let i=0;i<W*H;i++){if(!cm[i]||lab[i])continue;let sp=0;st[sp++]=i;lab[i]=1;let n=0;const pts=[];
+   while(sp){const j=st[--sp];n++;const x=j%W;if(n%5===0)pts.push([x+0.5,(j/W|0)+0.5]);for(const jj of [x>0?j-1:-1,x<W-1?j+1:-1,j-W,j+W])if(jj>=0&&jj<W*H&&cm[jj]&&!lab[jj]){lab[jj]=1;st[sp++]=jj;}}
+   if(n<100*pxPerM*pxPerM||pts.length<4)continue;const r=minRect(hull(pts));if(n/r.A<0.8)continue;
+   src=cm;const P=refine(r.pts,1);src=cls;const pdfPts=P.map(p=>vp.convertToPdfPoint(p[0],p[1]));out.push({type:'vert',gris:true,pts:pdfPts,on:!inMargin(pdfPts),ref:null,face:null});}}
+ // réunion de deux morceaux verts (inchangé)
  const toPx=p=>vp.convertToViewportPoint(p[0],p[1]);
  const greenFrac=q=>{let n=0,g=0;for(let i=0;i<=20;i++)for(let j=0;j<=20;j++){const u=i/20,t=j/20;const a=[q[0][0]+(q[1][0]-q[0][0])*u,q[0][1]+(q[1][1]-q[0][1])*u],b=[q[3][0]+(q[2][0]-q[3][0])*u,q[3][1]+(q[2][1]-q[3][1])*u];
   const x=Math.round(a[0]+(b[0]-a[0])*t),y=Math.round(a[1]+(b[1]-a[1])*t);if(x<0||y<0||x>=W||y>=H)continue;n++;let hit=0;for(let dy=-2;dy<=2&&!hit;dy++)for(let dx=-2;dx<=2&&!hit;dx++){const xx=x+dx,yy=y+dy;if(xx>=0&&yy>=0&&xx<W&&yy<H&&cls[yy*W+xx]===1)hit=1;}g+=hit;}return n?g/n:0;};
@@ -151,7 +295,7 @@ async function fromImage(){// repérage par la couleur, avec « ouverture » pou
     if(Math.abs(la-lb)>1.5*pxPerM)continue;if(dist(a1,b2)>6.5*pxPerM||dist(a2,b1)>6.5*pxPerM)continue;
     const ux=(a2[0]-a1[0])/la,uy=(a2[1]-a1[1])/la;if(Math.abs((b2[0]-a1[0])*ux+(b2[1]-a1[1])*uy)>1.5*pxPerM)continue;
     if(segDist(b1,a1,a2)>6*pxPerM)continue;if(greenFrac([a1,a2,b1,b2])<0.12)continue;
-    G[i].pts=minRect(hull([...G[i].pts,...G[j].pts])).pts;out.splice(out.indexOf(G[j]),1);merged=true;break outer;}}}
+    G[i].pts=minRect(hull([...G[i].pts,...G[j].pts])).pts.map(toPx);G[i].pts=refine(G[i].pts,1).map(p=>vp.convertToPdfPoint(p[0],p[1]));out.splice(out.indexOf(G[j]),1);merged=true;break outer;}}}
  return out;}
 // ---------- enchaînement : chaque bâtiment vert s'appuie sur le bâtiment déjà implanté le plus proche ----------
 // Le 1er bâtiment vert est celui le plus proche d'un existant ; les suivants s'appuient de préférence sur un bâtiment vert
@@ -168,21 +312,24 @@ function dropIsolated(){const lim=60*m2pt();S.blds.forEach(b=>{if(b.type!=='vert
  const big=Math.max(0,...S.blds.filter(b=>b.type==='vert'&&b.on).map(b=>area(b.pts)));S.blds.forEach(b=>{if(b.type==='vert'&&b.on&&area(b.pts)<big*0.25)b.on=false;});}
 function faceOf(g,r){// côté du bâtiment vert qui fait face à la référence, et côté de la référence qui lui fait face
  if(g.face!=null)return g.face;let bi=0,bd=1e18;for(let i=0;i<g.pts.length;i++){const a=g.pts[i],b=g.pts[(i+1)%g.pts.length],mid=[(a[0]+b[0])/2,(a[1]+b[1])/2];let dd=1e18;for(let j=0;j<r.pts.length;j++)dd=Math.min(dd,segDist(mid,r.pts[j],r.pts[(j+1)%r.pts.length]));if(dd<bd){bd=dd;bi=i;}}return bi;}
-function refEdge(r,A,B){const mid=[(A[0]+B[0])/2,(A[1]+B[1])/2];let bi=0,bd=1e18;for(let j=0;j<r.pts.length;j++){const a=r.pts[j],b=r.pts[(j+1)%r.pts.length];const m=[(a[0]+b[0])/2,(a[1]+b[1])/2];const dd=segDist(mid,a,b)+0.3*dist(mid,m);if(dd<bd){bd=dd;bi=j;}}return [r.pts[bi],r.pts[(bi+1)%r.pts.length]];}
+// côté de la référence qui fait face : un vrai mur (3 m au moins), pas une petite encoche
+function refEdge(r,A,B){const mid=[(A[0]+B[0])/2,(A[1]+B[1])/2];const minL=3*m2pt();let bi=-1,bd=1e18;
+ for(const strict of [true,false]){for(let j=0;j<r.pts.length;j++){const a=r.pts[j],b=r.pts[(j+1)%r.pts.length];if(strict&&dist(a,b)<minL)continue;const m=[(a[0]+b[0])/2,(a[1]+b[1])/2];const dd=segDist(mid,a,b)+0.3*dist(mid,m);if(dd<bd){bd=dd;bi=j;}}if(bi>=0)break;}
+ return [r.pts[bi],r.pts[(bi+1)%r.pts.length]];}
 function compute(){const rows=[];const G=S.blds.filter(b=>b.type==='vert'&&b.on).sort((a,b)=>a.order-b.order);
  G.forEach((g,gi)=>{const r=S.blds[g.ref];const n=gi+1;const res={g,n,cotes:[],diag:null,sides:[]};
   for(let i=0;i<g.pts.length;i++)res.sides.push(meters(g.pts[i],g.pts[(i+1)%g.pts.length]));
   if(g.pts.length===4)res.diag=[meters(g.pts[0],g.pts[2]),meters(g.pts[1],g.pts[3])];
-  if(r){const f=faceOf(g,r);const A=g.pts[f],B=g.pts[(f+1)%g.pts.length];const [R1,R2]=refEdge(r,A,B);res.A=A;res.B=B;res.R1=R1;res.R2=R2;res.ref=r;
+  if(r){const f=faceOf(g,r);const A=g.pts[f],B=g.pts[(f+1)%g.pts.length];let [R1,R2]=refEdge(r,A,B);const rs=g.rsel;if(rs&&rs.ref===r.id&&r.pts[rs.i]&&r.pts[rs.j]){R1=r.pts[rs.i];R2=r.pts[rs.j];}/* angles R1 / R2 choisis à la main */res.A=A;res.B=B;res.R1=R1;res.R2=R2;res.ref=r;
    res.refName=r.type==='jaune'?'existant':'bâtiment '+(G.indexOf(r)+1);
    res.cotes=[{from:A,fn:n+'A',to:R1,tn:'R1',v:meters(A,R1)},{from:A,fn:n+'A',to:R2,tn:'R2',v:meters(A,R2)},{from:B,fn:n+'B',to:R1,tn:'R1',v:meters(B,R1)},{from:B,fn:n+'B',to:R2,tn:'R2',v:meters(B,R2)}];res.ab=meters(A,B);}
   rows.push(res);});return rows;}
 // ---------- affichage ----------
-S.rot=0;S.sel=1;S.mode='';S.pick=[];// sel : n° du bâtiment affiché (0 = tous) ; mode : '' | 'trier' | 'fusion'
+S.rot=0;S.sel=1;S.mode='';S.pick=[];S.edit=false;S.undo=[];S.rpick=null;// sel : n° du bâtiment affiché (0 = tous) ; mode : '' | 'trier' | 'fusion'
 async function render(){const v0=S.page.getViewport({scale:1});const sc=Math.min(3,Math.sqrt(12e6/(v0.width*v0.height)));S.vp=S.page.getViewport({scale:sc,rotation:(S.page.rotate+S.rot)%360});const c=$('cv');c.width=Math.floor(S.vp.width);c.height=Math.floor(S.vp.height);await S.page.render({canvasContext:c.getContext('2d'),viewport:S.vp,intent:'print'}).promise;
  const ov=$('ov');ov.setAttribute('width',c.width);ov.setAttribute('height',c.height);ov.setAttribute('viewBox','0 0 '+c.width+' '+c.height);$('stage').style.width=c.width+'px';$('stage').style.height=c.height+'px';}
 const V=p=>S.vp.convertToViewportPoint(p[0],p[1]);
-function refresh(){const rows=compute();if(S.sel>rows.length)S.sel=rows.length?1:0;drawBar(rows);drawOverlay(rows);drawPanel(rows);drawTable(rows);}
+function refresh(){const rows=compute();if(S.sel>rows.length)S.sel=rows.length?1:0;drawBar(rows);drawOverlay(rows);drawPanel(rows);drawEdit();}
 function drawBar(rows){$('bar').innerHTML=rows.map(r=>'<button type="button" class="bbtn'+(S.sel===r.n?' on':'')+'" data-sel="'+r.n+'">Bâtiment '+r.n+'</button>').join('')+(rows.length>1?'<button type="button" class="bbtn'+(S.sel===0?' on':'')+'" data-sel="0">Tout</button>':'');}
 // Un bâtiment à la fois : plan grisé, ses 4 cotes et sa diagonale en gros, la référence soulignée, les autres en simple contour.
 function drawOverlay(rows){const ov=$('ov');const u=1/Math.max(0.05,S.zoom);const one=S.sel>0;const R=rows.filter(r=>!one||r.n===S.sel);const big=one?1.15:0.9;let h='';
@@ -200,7 +347,9 @@ function drawOverlay(rows){const ov=$('ov');const u=1/Math.max(0.05,S.zoom);cons
   if(r.A){[[r.A,r.n+'A'],[r.B,r.n+'B']].forEach(([p,t])=>{const q=V(p);h+='<circle cx="'+q[0]+'" cy="'+q[1]+'" r="'+(4.5*ub)+'" fill="#d0021b" stroke="#fff" stroke-width="'+ub+'"/>'+label(off(q,r.g,14*ub),t,'#073b2a',ub,true);});
    [[r.R1,'R1'],[r.R2,'R2']].forEach(([p,t])=>{const q=V(p);h+='<circle cx="'+q[0]+'" cy="'+q[1]+'" r="'+(4.5*ub)+'" fill="#073b2a" stroke="#fff" stroke-width="'+ub+'"/>'+(one?label(off(q,r.ref,14*ub),t,'#073b2a',ub,true):'');});}
   const cen=center(r.g);h+='<circle cx="'+cen[0]+'" cy="'+cen[1]+'" r="'+(12*ub)+'" fill="#073b2a"/><text x="'+cen[0]+'" y="'+(cen[1]+5*ub)+'" font-size="'+(14*ub)+'" font-weight="700" fill="#fff" text-anchor="middle" font-family="Arial">'+r.n+'</text>';});
- if($('adjust').checked)S.blds.forEach(b=>{if(!b.on||(one&&!focus.has(b.id)))return;b.pts.forEach((p,i)=>{const q=V(p);h+='<circle class="hdl" cx="'+q[0]+'" cy="'+q[1]+'" r="'+(10*u)+'" fill="rgba(255,255,255,.6)" stroke="#000" stroke-width="'+u+'" data-b="'+b.id+'" data-i="'+i+'" style="cursor:move"/>';});});
+ // mode « Corriger les angles » : un gros rond sur chaque angle (vert : à déplacer ; jaune : à déplacer ou à choisir comme R1 / R2)
+ if(S.edit)S.blds.forEach(b=>{if(!b.on||(one&&!focus.has(b.id)))return;const pk=S.rpick&&S.rpick.ref===b.id?S.rpick.i:-1;b.pts.forEach((p,i)=>{const q=V(p);
+  h+='<circle class="hdl" cx="'+q[0]+'" cy="'+q[1]+'" r="'+(14*u)+'" fill="'+(i===pk?'rgba(29,99,216,.45)':'rgba(255,255,255,.35)')+'" stroke="'+(b.type==='vert'?'#00a03a':'#b07d00')+'" stroke-width="'+(2.5*u)+'" data-b="'+b.id+'" data-i="'+i+'" style="cursor:move"/>';});});
  ov.innerHTML=h;}
 function center(b){const P=b.pts.map(V);return P.reduce((s,p)=>[s[0]+p[0]/P.length,s[1]+p[1]/P.length],[0,0]);}
 function off(q,b,d){const c=center(b);const dx=q[0]-c[0],dy=q[1]-c[1],L=Math.hypot(dx,dy)||1;return [q[0]+dx/L*d*1.6,q[1]+dy/L*d*1.6];}// étiquette d'angle placée à l'extérieur du bâtiment
@@ -213,13 +362,8 @@ function drawPanel(rows){let h='';const one=S.sel>0;
  if(S.mode==='fusion')h+='<p class="msg warn">Touche les <b>deux morceaux</b> du même bâtiment (en bleu une fois choisis) : ils deviennent un seul bâtiment.</p>';
  $('blds').innerHTML=h;
  const sel=$('calSide');const cur=sel.value;sel.innerHTML=rows.map(r=>r.sides.map((s,i)=>'<option value="'+r.g.id+':'+i+'">Bâtiment '+r.n+', côté '+(i+1)+' ('+fmt(s)+' m)</option>').join('')).join('');if(cur)sel.value=cur;}
-function drawTable(rows){if(!rows.length){$('table').innerHTML='<p class="small">Aucun bâtiment vert actif.</p>';return;}let h='';const one=S.sel>0;
- rows.filter(r=>!one||r.n===S.sel).forEach(r=>{h+='<table style="margin-bottom:8px"><tr><th colspan="2">Bâtiment '+r.n+(r.ref?' · depuis '+r.refName:'')+'</th></tr>';
-  r.cotes.forEach(c=>{h+='<tr><td>Angle <b>'+c.fn+'</b> → angle <b>'+c.tn+'</b></td><td class="v">'+fmt(c.v)+' m</td></tr>';});
-  if(r.ab)h+='<tr><td>Entre <b>'+r.n+'A</b> et <b>'+r.n+'B</b></td><td class="v">'+fmt(r.ab)+' m</td></tr>';
-  if(r.diag)h+='<tr><td>Diagonale (équerre)</td><td class="v">'+fmt(r.diag[0])+' m'+(Math.abs(r.diag[0]-r.diag[1])>0.05?' / '+fmt(r.diag[1]):'')+'</td></tr>';
-  h+='<tr><td>Côtés</td><td class="v">'+r.sides.slice(0,2).map(fmt).join(' × ')+' m</td></tr></table>';});
- $('table').innerHTML=h;}
+function drawEdit(){$('editBtn').classList.toggle('act',!!S.edit);$('editBtn').textContent=S.edit?'✔ Terminer la correction':'✋ Corriger les angles';$('undoBtn').hidden=!S.edit;$('rectBtn').hidden=!S.edit;$('undoBtn').disabled=!S.undo.length;
+ $('editHelp').hidden=!S.edit;$('editHelp').innerHTML=S.rpick?'Touche maintenant le <b>2ᵉ angle jaune</b> : il deviendra <b>R2</b>.':'• <b>Fais glisser</b> un rond pour déplacer un angle.<br>• <b>Touche 2 angles jaunes</b> l’un après l’autre : ils deviennent <b>R1</b> puis <b>R2</b>.<br>• <b>Touche un côté jaune</b> pour y ajouter un angle ; <b>appui long</b> sur un rond jaune pour le supprimer.';}
 // ---------- interactions ----------
 $('bar').addEventListener('click',e=>{const t=e.target.closest('[data-sel]');if(!t)return;S.sel=+t.dataset.sel;refresh();if(S.sel)focusOn(S.sel);});
 function focusOn(n){const r=compute().find(x=>x.n===n);if(!r)return;const P=[...r.g.pts,...(r.ref?r.ref.pts:[])].map(V);const xs=P.map(p=>p[0]),ys=P.map(p=>p[1]);const w=$('viewWrap');const bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...ys)-Math.min(...ys);
@@ -227,7 +371,15 @@ function focusOn(n){const r=compute().find(x=>x.n===n);if(!r)return;const P=[...
 $('blds').addEventListener('change',e=>{const t=e.target;if(t.dataset.ref!=null){const g=S.blds[+t.dataset.ref];g.ref=+t.value;g.face=null;refresh();}});
 $('blds').addEventListener('click',e=>{const m=e.target.closest('[data-mode]');if(m){S.mode=S.mode===m.dataset.mode?'':m.dataset.mode;S.pick=[];refresh();return;}
  const t=e.target.closest('[data-face]');if(!t)return;const g=S.blds[+t.dataset.face];const r=S.blds[g.ref];const f=g.face!=null?g.face:faceOf(g,r);g.face=(f+1)%g.pts.length;refresh();});
-$('adjust').addEventListener('change',refresh);
+$('editBtn').onclick=()=>{S.edit=!S.edit;S.rpick=null;if(S.edit)S.mode='';refresh();};
+$('undoBtn').onclick=()=>{const s=S.undo.pop();if(!s||s.length!==S.blds.length)return;s.forEach((x,i)=>{Object.assign(S.blds[i],{pts:x.pts,on:x.on,ref:x.ref,face:x.face,rsel:x.rsel});});S.rpick=null;refresh();};
+// le bâtiment jaune de référence (contour trop découpé) devient un simple rectangle
+$('rectBtn').onclick=()=>{const rows=compute();const r=rows.find(x=>x.n===S.sel)||rows[0];if(!r||!r.ref||r.ref.type!=='jaune'){say('Choisis d’abord un bâtiment qui s’appuie sur un jaune.','warn');return;}
+ snap();r.ref.pts=minRect(hull(r.ref.pts)).pts;S.blds.forEach(g=>{if(g.rsel&&g.rsel.ref===r.ref.id)g.rsel=null;});S.rpick=null;refresh();};
+// avant chaque correction : on garde l'état pour pouvoir annuler
+function snap(){S.undo.push(S.blds.map(b=>({pts:b.pts.map(p=>p.slice()),on:b.on,ref:b.ref,face:b.face,rsel:b.rsel?{...b.rsel}:null})));if(S.undo.length>40)S.undo.shift();}
+// angle ajouté (ins = position) ou supprimé (del) dans un bâtiment jaune : les choix R1 / R2 qui s'y rapportent suivent
+function shiftR(bid,k,ins){S.blds.forEach(g=>{const r=g.rsel;if(!r||r.ref!==bid)return;for(const key of ['i','j']){if(ins){if(r[key]>=k)r[key]++;}else if(r[key]===k){g.rsel=null;return;}else if(r[key]>k)r[key]--;}});}
 $('calOk').addEventListener('click',()=>{const [bid,i]=$('calSide').value.split(':').map(Number);const b=S.blds[bid];const real=Number(String($('calLen').value).replace(',','.'));if(!b||!real){$('calInfo').textContent='Choisis un côté et tape sa longueur.';return;}
  const raw=dist(b.pts[i],b.pts[(i+1)%b.pts.length])/m2pt();S.k=real/raw;$('calInfo').textContent='Échelle corrigée : × '+S.k.toFixed(4).replace('.',',')+' (côté mesuré '+fmt(raw)+' m → '+fmt(real)+' m).';refresh();});
 $('rot').onclick=async()=>{S.rot=(S.rot+90)%360;await render();refresh();fitZoom();if(S.sel)focusOn(S.sel);};
@@ -236,20 +388,35 @@ function mergeBlds(a,b){const A=S.blds[a],B=S.blds[b];const all=[...A.pts,...B.p
  S.blds.splice(b,1);S.blds.forEach((x,i)=>{x.id=i;});autoChain();}
 let drag=null;const ov=$('ov');
 function evPt(e){const r=$('cv').getBoundingClientRect();return [(e.clientX-r.left)*$('cv').width/r.width,(e.clientY-r.top)*$('cv').height/r.height];}
-ov.addEventListener('click',e=>{if($('adjust').checked)return;const pg=e.target.closest('polygon[data-b]');if(!pg)return;const b=S.blds[+pg.dataset.b];
+ov.addEventListener('click',e=>{if(S.edit){editTap(e);return;}const pg=e.target.closest('polygon[data-b]');if(!pg)return;const b=S.blds[+pg.dataset.b];
  if(S.mode==='trier'){b.on=!b.on;autoChain();refresh();return;}
  if(S.mode==='fusion'){if(!S.pick.includes(b.id))S.pick.push(b.id);if(S.pick.length===2){const [x,y]=S.pick;if(S.blds[x].type!==S.blds[y].type){say('Choisis deux morceaux de la même couleur.','err');S.pick=[];refresh();return;}mergeBlds(Math.min(x,y),Math.max(x,y));S.pick=[];S.mode='';say('✅ Morceaux réunis en un seul bâtiment.','ok');}refresh();return;}
  if(b.type==='vert'&&b.on){const r=compute().find(x=>x.g===b);if(r){S.sel=r.n;refresh();}}});
-ov.addEventListener('pointerdown',e=>{const h=e.target.closest('.hdl');if(!h)return;drag={b:+h.dataset.b,i:+h.dataset.i};ov.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();});
-ov.addEventListener('pointermove',e=>{if(!drag)return;const p=evPt(e);S.blds[drag.b].pts[drag.i]=S.vp.convertToPdfPoint(p[0],p[1]);refresh();});
-ov.addEventListener('pointerup',()=>{drag=null;});
+// rond : glisser = déplacer ; toucher (jaune) = choisir R1 puis R2 ; appui long (jaune) = supprimer l'angle
+ov.addEventListener('pointerdown',e=>{const h=e.target.closest('.hdl');if(!h)return;drag={b:+h.dataset.b,i:+h.dataset.i,x:e.clientX,y:e.clientY,moved:false,done:false};
+ const d0=drag;d0.timer=setTimeout(()=>{if(drag!==d0||d0.moved)return;d0.done=true;const b=S.blds[d0.b];if(b.type!=='jaune'||b.pts.length<=3){say('Un bâtiment vert garde ses 4 angles : fais-les glisser.','warn');return;}
+  snap();b.pts.splice(d0.i,1);shiftR(b.id,d0.i,false);S.rpick=null;if(navigator.vibrate)navigator.vibrate(30);refresh();},650);
+ ov.setPointerCapture(e.pointerId);e.preventDefault();e.stopPropagation();});
+ov.addEventListener('pointermove',e=>{if(!drag||drag.done)return;if(!drag.moved){if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<6)return;drag.moved=true;clearTimeout(drag.timer);snap();}
+ const p=evPt(e);S.blds[drag.b].pts[drag.i]=S.vp.convertToPdfPoint(p[0],p[1]);refresh();});
+ov.addEventListener('pointerup',()=>{if(!drag)return;const d0=drag;drag=null;clearTimeout(d0.timer);if(d0.moved||d0.done)return;S.tapped=Date.now();
+ const b=S.blds[d0.b];if(b.type!=='jaune')return;const rows=compute();const r=rows.find(x=>x.n===S.sel)||rows.find(x=>x.ref===b);if(!r)return;
+ if(r.g.ref!==b.id){r.g.ref=b.id;r.g.face=null;r.g.rsel=null;}
+ if(!S.rpick||S.rpick.ref!==b.id){S.rpick={ref:b.id,i:d0.i,g:r.g.id};refresh();return;}
+ if(S.rpick.i===d0.i){S.rpick=null;refresh();return;}
+ snap();S.blds[S.rpick.g].rsel={ref:b.id,i:S.rpick.i,j:d0.i};S.rpick=null;say('✅ R1 et R2 choisis.','ok');refresh();});
+// toucher un côté jaune (hors rond) : on y ajoute un angle
+function editTap(e){if(e.target.closest('.hdl')||(S.tapped&&Date.now()-S.tapped<400)||S.panMoved)return;const p=evPt(e);const u=1/Math.max(0.05,S.zoom);const rows=compute();const one=S.sel>0;
+ const focus=new Set();rows.filter(r=>!one||r.n===S.sel).forEach(r=>{if(r.ref)focus.add(r.ref.id);});let best=null;
+ S.blds.forEach(b=>{if(!b.on||b.type!=='jaune'||(one&&!focus.has(b.id)))return;const P=b.pts.map(V);for(let i=0;i<P.length;i++){const a=P[i],c=P[(i+1)%P.length];const d=segDist(p,a,c);if(d<=16*u&&(!best||d<best.d))best={b,i,d};}});
+ if(!best)return;snap();best.b.pts.splice(best.i+1,0,S.vp.convertToPdfPoint(p[0],p[1]));shiftR(best.b.id,best.i+1,true);refresh();}
 // zoom et déplacement
 function setZoom(z,cx,cy){const w=$('viewWrap');const ox=(w.scrollLeft+(cx??w.clientWidth/2))/S.zoom,oy=(w.scrollTop+(cy??w.clientHeight/2))/S.zoom;S.zoom=Math.max(0.05,Math.min(4,z));$('stage').style.transform='scale('+S.zoom+')';$('stage').style.width=$('cv').width+'px';const sp=$('spacer')||(()=>{const d=document.createElement('div');d.id='spacer';d.style.cssText='position:absolute;left:0;top:0;pointer-events:none';$('viewWrap').appendChild(d);return d;})();sp.style.width=($('cv').width*S.zoom)+'px';sp.style.height=($('cv').height*S.zoom)+'px';w.scrollLeft=ox*S.zoom-(cx??w.clientWidth/2);w.scrollTop=oy*S.zoom-(cy??w.clientHeight/2);if(S.page&&S.blds)drawOverlay(compute());}
 function fitZoom(){const w=$('viewWrap');setZoom(Math.min(w.clientWidth/$('cv').width,w.clientHeight/$('cv').height));}
 $('zin').onclick=()=>setZoom(S.zoom*1.4);$('zout').onclick=()=>setZoom(S.zoom/1.4);$('zfit').onclick=fitZoom;
 $('viewWrap').addEventListener('wheel',e=>{e.preventDefault();const r=$('viewWrap').getBoundingClientRect();setZoom(S.zoom*(e.deltaY<0?1.15:1/1.15),e.clientX-r.left,e.clientY-r.top);},{passive:false});
-let pan=null;$('viewWrap').addEventListener('pointerdown',e=>{if(drag||e.target.closest('.zoom')||e.target.closest('.hdl'))return;pan={x:e.clientX,y:e.clientY,l:$('viewWrap').scrollLeft,t:$('viewWrap').scrollTop};});
-window.addEventListener('pointermove',e=>{if(!pan)return;$('viewWrap').scrollLeft=pan.l-(e.clientX-pan.x);$('viewWrap').scrollTop=pan.t-(e.clientY-pan.y);});window.addEventListener('pointerup',()=>{pan=null;});
+let pan=null;$('viewWrap').addEventListener('pointerdown',e=>{if(drag||e.target.closest('.zoom')||e.target.closest('.hdl'))return;pan={x:e.clientX,y:e.clientY,l:$('viewWrap').scrollLeft,t:$('viewWrap').scrollTop};S.panMoved=false;});
+window.addEventListener('pointermove',e=>{if(!pan)return;if(Math.hypot(e.clientX-pan.x,e.clientY-pan.y)>5)S.panMoved=true;$('viewWrap').scrollLeft=pan.l-(e.clientX-pan.x);$('viewWrap').scrollTop=pan.t-(e.clientY-pan.y);});window.addEventListener('pointerup',()=>{pan=null;});
 // fichier
 async function takeFile(f){if(!f)return;if(!/pdf$/i.test(f.type)&&!/\.pdf$/i.test(f.name)){say('Choisis un fichier PDF.','err');return;}S.name=f.name.replace(/\.pdf$/i,'');S.rot=0;S.sel=1;S.mode='';S.pick=[];try{await load(new Uint8Array(await f.arrayBuffer()));if(S.sel)focusOn(S.sel);}catch(e){console.error(e);say('Impossible de lire ce plan : '+(e.message||e),'err');}}
 $('file').addEventListener('change',e=>takeFile(e.target.files[0]));
