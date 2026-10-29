@@ -43,7 +43,7 @@ label.chk{display:flex;gap:6px;align-items:center;font-size:13px}
   <div id="drop"><p><b>Glisse le plan ici</b> ou</p><input type="file" id="file" accept="application/pdf"><p class="small">Échelle : <input id="scaleDen" type="number" value="1000" style="width:90px"> (1:1000 par défaut)</p></div>
   <div id="status"></div>
   <div id="bar" class="bar"></div>
-  <div id="edit" class="editbar" hidden><button type="button" class="btn sec" id="editBtn">✋ Corriger les angles</button><button type="button" class="btn sec" id="undoBtn" hidden>↺ Annuler</button><button type="button" class="btn sec" id="rectBtn" hidden>▭ Jaune en rectangle</button><button type="button" class="btn" id="delBtn" hidden style="background:#d0021b">🗑 Supprimer l’angle</button><button type="button" class="btn" id="r1Btn" hidden style="background:#073b2a">R1 ici</button><button type="button" class="btn" id="r2Btn" hidden style="background:#073b2a">R2 ici</button><p id="editHelp" class="msg warn" hidden></p></div>
+  <div id="edit" class="editbar" hidden><button type="button" class="btn sec" id="editBtn">✋ Corriger les angles</button><button type="button" class="btn sec" id="undoBtn" hidden>↺ Annuler</button><button type="button" class="btn sec" id="rectBtn" hidden>▭ Jaune en rectangle</button><button type="button" class="btn" id="delBtn" hidden style="background:#d0021b">🗑 Supprimer l’angle</button><button type="button" class="btn" id="r1Btn" hidden style="background:#073b2a">R1 ici</button><button type="button" class="btn" id="r2Btn" hidden style="background:#073b2a">R2 ici</button><button type="button" class="btn sec" id="ignBtn" hidden>🚫 Ignorer ce bâtiment</button><p id="editHelp" class="msg warn" hidden></p></div>
   <div id="viewWrap" hidden><div class="zoom"><button type="button" id="rot" title="Tourner le plan">↻</button><button type="button" id="zin" title="Zoomer">＋</button><button type="button" id="zout" title="Dézoomer">−</button><button type="button" id="zfit" title="Tout voir">⤢</button></div><div id="stage"><canvas id="cv"></canvas><svg id="ov" xmlns="http://www.w3.org/2000/svg"></svg></div></div>
   <p class="small" id="hint" hidden>Choisis un bâtiment avec les boutons au-dessus du plan (ou touche-le sur le plan). ↻ tourne le plan. <b>✋ Corriger les angles</b> permet de déplacer un angle et de choisir les angles R1 et R2 (utile pour les plans en image).</p>
  </section>
@@ -244,7 +244,20 @@ async function fromImage(){// repérage par la couleur ; jaunes : vrai contour d
    offs.sort((x,y)=>x-y);const md=offs.length>=8?offs[offs.length>>1]:0;lines.push({p:[a[0]+nx*md,a[1]+ny*md],u:[ux,uy]});}
   const X=(l1,l2)=>{const det=l1.u[0]*(-l2.u[1])-l1.u[1]*(-l2.u[0]);if(Math.abs(det)<1e-6)return null;const dx=l2.p[0]-l1.p[0],dy=l2.p[1]-l1.p[1];const t=(dx*(-l2.u[1])-dy*(-l2.u[0]))/det;return [l1.p[0]+l1.u[0]*t,l1.p[1]+l1.u[1]*t];};
   const Q=[];for(let i=0;i<n;i++){const q=X(lines[(i-1+n)%n],lines[i]);if(!q||dist(q,P[i])>1.5*pxPerM)return P;Q.push(q);}return Q;};
- for(const k of [1,2]){const mask=new Uint8Array(W*H);for(let j=0;j<W*H;j++)mask[j]=cls[j]===k?1:0;const om=dil(ero(mask,rOpen),rOpen);const cm=ero(dil(om,rClose),rClose);
+ // traits rouges épais (limite de propriété…) qui traversent un bâtiment jaune : on les compte comme du jaune s'ils sont pris
+ // entre deux parties jaunes (fermeture limitée aux pixels rouges), pour ne pas couper le bâtiment en deux
+ // arc de cercle : points du bord à plus de 0,8 m des côtés du rectangle → cercle des moindres carrés (méthode de Kåsa)
+ const arcOf=(bd,R)=>{const off=bd.filter(p=>Math.min(...R.map((a,i)=>segDist(p,a,R[(i+1)%4])))>0.8*pxPerM);if(off.length<4)return {ok:false,n:off.length};// (vrais bâtiments : 0 à 2 points hors du rectangle sur les plans d'essai)
+  let Sx=0,Sy=0,Sxx=0,Syy=0,Sxy=0,Sxz=0,Syz=0,Sz=0;const n=off.length;const mx=off.reduce((s,p)=>s+p[0],0)/n,my=off.reduce((s,p)=>s+p[1],0)/n;
+  off.forEach(p=>{const x=p[0]-mx,y=p[1]-my,z=x*x+y*y;Sx+=x;Sy+=y;Sxx+=x*x;Syy+=y*y;Sxy+=x*y;Sxz+=x*z;Syz+=y*z;Sz+=z;});
+  const M=[[Sxx,Sxy,Sx],[Sxy,Syy,Sy],[Sx,Sy,n]],v=[-Sxz,-Syz,-Sz];const det3=m=>m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+  const D0=det3(M);if(Math.abs(D0)<1e-9)return {ok:false,n};const col=(i)=>M.map((row,r)=>row.map((x,c)=>c===i?v[r]:x));const D=det3(col(0))/D0,E=det3(col(1))/D0,F=det3(col(2))/D0;
+  const cx=-D/2,cy=-E/2,rr=Math.sqrt(Math.max(0,cx*cx+cy*cy-F));const rms=Math.sqrt(off.reduce((s,p)=>{const e=Math.hypot(p[0]-mx-cx,p[1]-my-cy)-rr;return s+e*e;},0)/n);
+  const rm=rr/pxPerM,em=rms/pxPerM;return {ok:rm>4&&rm<80&&em<0.35,n,r:+rm.toFixed(1),rms:+em.toFixed(2)};};
+ const isRed=j=>d[4*j]>170&&d[4*j+1]<110&&d[4*j+2]<110;
+ for(const k of [1,2]){let mask=new Uint8Array(W*H);for(let j=0;j<W*H;j++)mask[j]=cls[j]===k?1:0;
+  if(k===2){const rb=Math.max(2,Math.round(1.6*pxPerM)),cl=ero(dil(mask,rb),rb);for(let j=0;j<W*H;j++)if(!mask[j]&&cl[j]&&isRed(j))mask[j]=1;}
+  const om=dil(ero(mask,rOpen),rOpen);const cm=ero(dil(om,rClose),rClose);
   const lab=new Int32Array(W*H),comps=[];const q=new Int32Array(W*H);
   for(let i=0;i<W*H;i++){if(!cm[i]||lab[i])continue;const id=comps.length+1;let qs=0,qe=0;q[qe++]=i;lab[i]=id;let n=0;const bd=[];let x0=1e9,y0=1e9,x1=0,y1=0;
    while(qs<qe){const j=q[qs++];n++;const x=j%W,y=(j/W)|0;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;let edge=false;
@@ -257,7 +270,9 @@ async function fromImage(){// repérage par la couleur ; jaunes : vrai contour d
    let ok=false;for(const p of sub[a]){for(const r of sub[b]){if(Math.abs(p[0]-r[0])<=gap&&Math.abs(p[1]-r[1])<=gap&&dist(p,r)<=gap){ok=true;break;}}if(ok)break;}if(ok)par[f(a)]=f(b);}
   const groups={};comps.forEach((c,i)=>{const r=f(i);(groups[r]=groups[r]||{n:0,bd:[],ids:[],box:[1e9,1e9,0,0]});const G=groups[r];G.n+=c.n;G.bd.push(...c.bd);G.ids.push(c.id);G.box=[Math.min(G.box[0],c.box[0]),Math.min(G.box[1],c.box[1]),Math.max(G.box[2],c.box[2]),Math.max(G.box[3],c.box[3])];});
   for(const g of Object.values(groups)){if(g.n<minPx)continue;const Hh=hull(g.bd);const r=minRect(Hh);const fill=g.n/r.A;let P,how;
-   if(k===1){if(fill<0.5)continue;P=refine(r.pts,1);how='rect';}
+   // vert : un zoom de détail est coupé par le bord d'un cercle. Les points du bord qui s'écartent du rectangle tombent alors
+   // sur un même arc de cercle (les étiquettes, elles, ne font que des encoches droites).
+   let zoom=false,arc=null;if(k===1){if(fill<0.5)continue;P=refine(r.pts,1);how='rect';arc=arcOf(Hh,r.pts);zoom=!!(arc&&arc.ok);}// contour extérieur seulement (enveloppe)
    else if(fill>0.9){P=refine(r.pts,2);how='rect';}
    else{// vrai contour : on recopie la tache (morceaux réunis par une fermeture de 0,8 m) et on suit son bord
     const m=Math.ceil(0.8*pxPerM)+2,[bx0,by0,bx1,by1]=g.box,w=bx1-bx0+1+2*m,h=by1-by0+1+2*m;let B=new Uint8Array(w*h);const ids=new Set(g.ids);
@@ -276,7 +291,7 @@ async function fromImage(){// repérage par la couleur ; jaunes : vrai contour d
     // le contour d'équerre est préféré (côtés nets) sauf si une autre forme colle nettement mieux
     const cand=[['equerre',Q],['contour',Q2],['hull',Hs]].filter(x=>x[1]&&x[1].length>=3).map(([nm,Z])=>({nm,Z,s:iou(Z)-0.003*Z.length+(nm==='equerre'?0.04:0)}));cand.sort((a,b)=>b.s-a.s);
     if(cand.length){P=cand[0].Z;how=cand[0].nm;}else{P=simplify(Hh.map(p=>vp.convertToPdfPoint(p[0],p[1]))).map(p=>vp.convertToViewportPoint(p[0],p[1]));how='hull';}}
-   const pdfPts=P.map(p=>vp.convertToPdfPoint(p[0],p[1]));out.push({type:k===1?'vert':'jaune',pts:pdfPts,on:!inMargin(pdfPts),ref:null,face:null});}}
+   const pdfPts=P.map(p=>vp.convertToPdfPoint(p[0],p[1]));out.push({type:k===1?'vert':'jaune',pts:pdfPts,on:!inMargin(pdfPts)&&!zoom,zoom,arc,ref:null,face:null});}}
  // Pas de vert : le projet est peut-être dessiné en gris quadrillé (avec une bande marron). Le quadrillage est bouché
  // (fermeture 0,5 m), les traits et textes retirés (ouverture 2 m) ; on garde les formes rectangulaires d'au moins 100 m².
  if(!out.some(o=>o.type==='vert')){const mask=new Uint8Array(W*H);for(let j=0;j<W*H;j++)mask[j]=cls[j]===3?1:0;
@@ -296,6 +311,12 @@ async function fromImage(){// repérage par la couleur ; jaunes : vrai contour d
     const ux=(a2[0]-a1[0])/la,uy=(a2[1]-a1[1])/la;if(Math.abs((b2[0]-a1[0])*ux+(b2[1]-a1[1])*uy)>1.5*pxPerM)continue;
     if(segDist(b1,a1,a2)>6*pxPerM)continue;if(greenFrac([a1,a2,b1,b2])<0.12)continue;
     G[i].pts=minRect(hull([...G[i].pts,...G[j].pts])).pts.map(toPx);G[i].pts=refine(G[i].pts,1).map(p=>vp.convertToPdfPoint(p[0],p[1]));out.splice(out.indexOf(G[j]),1);merged=true;break outer;}}}
+ // deux morceaux verts qui se chevauchent (bâtiment coupé par des étiquettes posées dessus) : un seul bâtiment
+ const overlap=(A,B)=>{const xs=A.map(p=>p[0]),ys=A.map(p=>p[1]);const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);let n=0,h=0;
+  for(let i=0;i<=14;i++)for(let j=0;j<=14;j++){const p=[x0+(x1-x0)*(i+0.5)/15,y0+(y1-y0)*(j+0.5)/15];if(!inPoly(p,A))continue;n++;if(inPoly(p,B))h++;}return n?h/n:0;};
+ merged=true;while(merged){merged=false;const G=out.filter(o=>o.type==='vert'&&!o.zoom);
+  outer2:for(let i=0;i<G.length;i++)for(let j=i+1;j<G.length;j++){const A=G[i].pts.map(toPx),B=G[j].pts.map(toPx);const small=area(A)<area(B)?[A,B]:[B,A];if(overlap(small[0],small[1])<0.15)continue;
+   G[i].pts=refine(minRect(hull([...A,...B])).pts,1).map(p=>vp.convertToPdfPoint(p[0],p[1]));G[i].on=G[i].on||G[j].on;out.splice(out.indexOf(G[j]),1);merged=true;break outer2;}}
  return out;}
 // ---------- enchaînement : chaque bâtiment vert s'appuie sur le bâtiment déjà implanté le plus proche ----------
 // Le 1er bâtiment vert est celui le plus proche d'un existant ; les suivants s'appuient de préférence sur un bâtiment vert
@@ -364,8 +385,9 @@ function drawPanel(rows){let h='';const one=S.sel>0;
  const sel=$('calSide');const cur=sel.value;sel.innerHTML=rows.map(r=>r.sides.map((s,i)=>'<option value="'+r.g.id+':'+i+'">Bâtiment '+r.n+', côté '+(i+1)+' ('+fmt(s)+' m)</option>').join('')).join('');if(cur)sel.value=cur;}
 function drawEdit(){$('editBtn').classList.toggle('act',!!S.edit);$('editBtn').textContent=S.edit?'✔ Terminer la correction':'✋ Corriger les angles';$('undoBtn').hidden=!S.edit;$('rectBtn').hidden=!S.edit;$('undoBtn').disabled=!S.undo.length;
  const sp=S.edit&&S.selPt&&S.blds[S.selPt.b]&&S.blds[S.selPt.b].pts[S.selPt.i]?S.selPt:null;if(!sp)S.selPt=null;const yel=sp&&S.blds[sp.b].type==='jaune';
- $('delBtn').hidden=$('r1Btn').hidden=$('r2Btn').hidden=!yel;$('delBtn').disabled=!!yel&&S.blds[sp.b].pts.length<=3;
- $('editHelp').hidden=!S.edit;$('editHelp').innerHTML=sp?(yel?'Angle sélectionné (en bleu) : <b>🗑 Supprimer l’angle</b>, ou choisis-le comme <b>R1</b> ou <b>R2</b>. Touche-le à nouveau pour le désélectionner.':'Angle vert sélectionné : un bâtiment vert garde ses 4 angles, fais-le <b>glisser</b> pour le déplacer.'):'• <b>Fais glisser</b> un rond pour déplacer un angle.<br>• <b>Touche un rond</b> pour le sélectionner : boutons <b>Supprimer</b>, <b>R1 ici</b>, <b>R2 ici</b>.<br>• <b>Touche un côté jaune</b> pour y ajouter un angle.';}
+ // tout point sélectionné : Supprimer l'angle et Ignorer le bâtiment ; R1 / R2 seulement sur un jaune
+ $('r1Btn').hidden=$('r2Btn').hidden=!yel;$('delBtn').hidden=$('ignBtn').hidden=!sp;$('delBtn').disabled=!!sp&&S.blds[sp.b].pts.length<=3;
+ $('editHelp').hidden=!S.edit;$('editHelp').innerHTML=sp?(yel?'Angle sélectionné (en bleu) : <b>🗑 Supprimer l’angle</b>, choisis-le comme <b>R1</b> ou <b>R2</b>, ou <b>🚫 Ignorer ce bâtiment</b>. Touche-le à nouveau pour le désélectionner.':'Angle vert sélectionné : <b>🗑 Supprimer l’angle</b> ou <b>🚫 Ignorer ce bâtiment</b> (un bâtiment vert a normalement 4 angles : fais-les plutôt glisser). Touche-le à nouveau pour le désélectionner.'):'• <b>Fais glisser</b> un rond pour déplacer un angle.<br>• <b>Touche un rond</b> pour le sélectionner : boutons <b>Supprimer</b>, <b>R1 ici</b>, <b>R2 ici</b>, <b>Ignorer ce bâtiment</b>.<br>• <b>Touche un côté jaune</b> pour y ajouter un angle.';}
 // ---------- interactions ----------
 $('bar').addEventListener('click',e=>{const t=e.target.closest('[data-sel]');if(!t)return;S.sel=+t.dataset.sel;refresh();if(S.sel)focusOn(S.sel);});
 function focusOn(n){const r=compute().find(x=>x.n===n);if(!r)return;const P=[...r.g.pts,...(r.ref?r.ref.pts:[])].map(V);const xs=P.map(p=>p[0]),ys=P.map(p=>p[1]);const w=$('viewWrap');const bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...ys)-Math.min(...ys);
@@ -406,7 +428,8 @@ function setR(which){const sp=S.selPt;if(!sp)return;const b=S.blds[sp.b];if(b.ty
  let i=b.pts.indexOf(r.R1),j=b.pts.indexOf(r.R2);if(which===1){if(sp.i===j)j=i;i=sp.i;}else{if(sp.i===i)i=j;j=sp.i;}
  r.g.rsel={ref:b.id,i,j};S.selPt=null;say('✅ '+(which===1?'R1':'R2')+' déplacé sur cet angle.','ok');refresh();}
 $('r1Btn').onclick=()=>setR(1);$('r2Btn').onclick=()=>setR(2);
-$('delBtn').onclick=()=>{const sp=S.selPt;if(!sp)return;const b=S.blds[sp.b];if(b.type!=='jaune'||b.pts.length<=3)return;snap();b.pts.splice(sp.i,1);shiftR(b.id,sp.i,false);S.selPt=null;refresh();};
+$('delBtn').onclick=()=>{const sp=S.selPt;if(!sp)return;const b=S.blds[sp.b];if(b.pts.length<=3)return;snap();b.pts.splice(sp.i,1);shiftR(b.id,sp.i,false);if(b.type==='vert')b.face=null;S.selPt=null;refresh();};
+$('ignBtn').onclick=()=>{const sp=S.selPt;if(!sp)return;const b=S.blds[sp.b];snap();b.on=false;S.selPt=null;autoChain();say('Bâtiment ignoré (traits gris). « ↺ Annuler » pour le reprendre.','ok');refresh();};
 // toucher un côté jaune (hors rond) : on y ajoute un angle
 function editTap(e){if(e.target.closest('.hdl')||(S.tapped&&Date.now()-S.tapped<400)||S.panMoved)return;const p=evPt(e);const u=1/Math.max(0.05,S.zoom);const rows=compute();const one=S.sel>0;
  const focus=new Set();rows.filter(r=>!one||r.n===S.sel).forEach(r=>{if(r.ref)focus.add(r.ref.id);});let best=null;
@@ -428,16 +451,37 @@ $('scaleDen').addEventListener('change',()=>{if(S.page)refresh();});
 $('pdfBtn').addEventListener('click',async()=>{const b=$('pdfBtn');b.disabled=true;b.textContent='⏳ Préparation…';try{
  const {PDFDocument,rgb,degrees,StandardFonts}=PDFLib;const src=await PDFDocument.load(S.bytes.slice(0));const doc=await PDFDocument.create();const font=await doc.embedFont(StandardFonts.HelveticaBold);
  const rows=compute();const red=rgb(0.82,0,0.1),blue=rgb(0.11,0.39,0.85),dark=rgb(0.03,0.23,0.16);
- for(const r of rows){const [pg]=await doc.copyPages(src,[0]);doc.addPage(pg);const rot=((pg.getRotation().angle+S.rot)%360+360)%360;pg.setRotation(degrees(rot));
-  const s=Math.max(0.5,Math.min(pg.getWidth(),pg.getHeight())/842)*1.25;
+ // le plan est intégré une seule fois (fichier léger) ; chaque page le reprend et reçoit ses propres dessins
+ const sp0=src.getPage(0),emb=await doc.embedPage(sp0),ob0=sp0.getMediaBox(),rot0=sp0.getRotation().angle;
+ for(const r of rows){const pg=doc.addPage([ob0.width,ob0.height]);pg.setMediaBox(ob0.x,ob0.y,ob0.width,ob0.height);pg.drawPage(emb,{x:ob0.x,y:ob0.y});const rot=((rot0+S.rot)%360+360)%360;pg.setRotation(degrees(rot));
+  // page cadrée sur le bâtiment, sa référence et ses cotes (comme le zoom à l'écran), au format A4
+  {const pts=[...r.g.pts,...(r.ref?r.ref.pts:[])];const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);let x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+   const mg=Math.max(15*m2pt(),0.25*Math.max(x1-x0,y1-y0));x0-=mg;x1+=mg;y0-=mg;y1+=mg;const side=(rot%180===0)?1:0;let w=x1-x0,h=y1-y0;
+   const ratio=297/210;const land=side?(w>=h):(h>=w);const want=land?ratio:1/ratio;// largeur / hauteur voulue, dans le sens de lecture
+   if(side){if(w/h<want){const nw=h*want;x0-=(nw-w)/2;w=nw;}else{const nh=w/want;y0-=(nh-h)/2;h=nh;}}else{if(h/w<want){const nh=w*want;y0-=(nh-h)/2;h=nh;}else{const nw=h/want;x0-=(nw-w)/2;w=nw;}}
+   const ob=pg.getMediaBox();const cx0=Math.max(ob.x,x0),cy0=Math.max(ob.y,y0),cx1=Math.min(ob.x+ob.width,x0+w),cy1=Math.min(ob.y+ob.height,y0+h);
+   pg.setMediaBox(cx0,cy0,cx1-cx0,cy1-cy0);pg.setCropBox(cx0,cy0,cx1-cx0,cy1-cy0);}
+  const s=Math.min(pg.getWidth(),pg.getHeight())/842*2;
   const lab=(p,t,col,fs0)=>{const fs=(fs0||7)*s,w=font.widthOfTextAtSize(t,fs)+4*s,h=fs+3*s;const a=rot*Math.PI/180;const c=Math.cos(a),sn=Math.sin(a);const ox=-w/2,oy=-h/2;const x=p[0]+ox*c-oy*sn,y=p[1]+ox*sn+oy*c;
    pg.drawRectangle({x,y,width:w,height:h,color:rgb(1,1,1),borderColor:col,borderWidth:0.6*s,rotate:degrees(rot)});const tx=p[0]+(-w/2+2*s)*c-(-h/2+2.3*s)*sn,ty=p[1]+(-w/2+2*s)*sn+(-h/2+2.3*s)*c;pg.drawText(t,{x:tx,y:ty,size:fs,font,color:col,rotate:degrees(rot)});};
   const cen=r.g.pts.reduce((q,p)=>[q[0]+p[0]/r.g.pts.length,q[1]+p[1]/r.g.pts.length],[0,0]);const outward=(p,b,d)=>{const c=b.pts.reduce((q,x)=>[q[0]+x[0]/b.pts.length,q[1]+x[1]/b.pts.length],[0,0]);const dx=p[0]-c[0],dy=p[1]-c[1],L=Math.hypot(dx,dy)||1;return [p[0]+dx/L*d,p[1]+dy/L*d];};
-  if(r.diag){const p=r.g.pts;pg.drawLine({start:{x:p[0][0],y:p[0][1]},end:{x:p[2][0],y:p[2][1]},thickness:0.8*s,color:blue,dashArray:[3*s,2*s]});lab([p[0][0]+(p[2][0]-p[0][0])*0.25,p[0][1]+(p[2][1]-p[0][1])*0.25],'Diag. '+fmt(r.diag[0]),blue);}
-  r.cotes.forEach(c=>pg.drawLine({start:{x:c.from[0],y:c.from[1]},end:{x:c.to[0],y:c.to[1]},thickness:0.9*s,color:red,dashArray:[3.5*s,2*s]}));
-  r.cotes.forEach((c,i)=>{const t=[0.5,0.3,0.3,0.5][i];lab([c.from[0]+(c.to[0]-c.from[0])*t,c.from[1]+(c.to[1]-c.from[1])*t],fmt(c.v)+' m',red);});
-  if(r.A){[[r.A,r.n+'A'],[r.B,r.n+'B']].forEach(([p,t])=>{pg.drawCircle({x:p[0],y:p[1],size:2.2*s,color:red});lab(outward(p,r.g,9*s),t,dark);});[[r.R1,'R1'],[r.R2,'R2']].forEach(([p,t])=>{pg.drawCircle({x:p[0],y:p[1],size:2.2*s,color:dark});lab(outward(p,r.ref,9*s),t,dark);});}
-  lab(cen,'Batiment '+r.n,dark,9);}
+  // comme à l'écran : plan atténué par un voile blanc, le bâtiment, sa référence et ses cotes ressortent
+  const green=rgb(0,0.55,0.23),gold=rgb(0.85,0.6,0),mb=pg.getMediaBox();pg.drawRectangle({x:mb.x,y:mb.y,width:mb.width,height:mb.height,color:rgb(1,1,1),opacity:0.6});
+  const path=P=>P.map((p,i)=>(i?'L':'M')+p[0].toFixed(2)+' '+(-p[1]).toFixed(2)).join(' ')+' Z';// (repère SVG : y vers le bas)
+  S.blds.forEach(b=>{if(!b.on||b===r.g||b===r.ref)return;pg.drawSvgPath(path(b.pts),{x:0,y:0,borderColor:b.type==='vert'?green:gold,borderWidth:0.5*s,borderOpacity:0.5});});
+  if(r.ref){const rc=r.ref.type==='vert'?green:gold;pg.drawSvgPath(path(r.ref.pts),{x:0,y:0,color:rc,opacity:0.15,borderColor:rc,borderWidth:1.4*s});}
+  pg.drawSvgPath(path(r.g.pts),{x:0,y:0,color:green,opacity:0.22,borderColor:green,borderWidth:1.8*s});
+  if(r.diag){const p=r.g.pts;pg.drawLine({start:{x:p[0][0],y:p[0][1]},end:{x:p[2][0],y:p[2][1]},thickness:1*s,color:blue,dashArray:[3*s,2*s]});}
+  r.cotes.forEach(c=>pg.drawLine({start:{x:c.from[0],y:c.from[1]},end:{x:c.to[0],y:c.to[1]},thickness:1.1*s,color:red,dashArray:[3.5*s,2*s]}));
+  // longueur et largeur du bâtiment vert : à l'extérieur, sur les côtés tournés à l'opposé de la référence (là où il n'y a pas de cotes)
+  {const P=r.g.pts,n=P.length;let idx=[];if(n===4){const f=r.A?Math.max(0,P.indexOf(r.A)):0;const rc=r.ref?r.ref.pts.reduce((q,p)=>[q[0]+p[0]/r.ref.pts.length,q[1]+p[1]/r.ref.pts.length],[0,0]):null;
+    const mid=i=>[(P[i][0]+P[(i+1)%n][0])/2,(P[i][1]+P[(i+1)%n][1])/2];const far=(i,j)=>!rc||Math.hypot(mid(i)[0]-rc[0],mid(i)[1]-rc[1])>=Math.hypot(mid(j)[0]-rc[0],mid(j)[1]-rc[1])?i:j;
+    idx=[(f+2)%4,far((f+1)%4,(f+3)%4)];}else idx=P.map((_,i)=>i);
+   idx.forEach(i=>{const a=P[i],b=P[(i+1)%n];lab(outward([(a[0]+b[0])/2,(a[1]+b[1])/2],r.g,13*s),fmt(r.sides[i])+' m',green,8.5);});}
+  if(r.diag){const p=r.g.pts;lab([p[0][0]+(p[2][0]-p[0][0])*0.2,p[0][1]+(p[2][1]-p[0][1])*0.2],'Diag. '+fmt(r.diag[0])+' m',blue,8.5);}
+  r.cotes.forEach((c,i)=>{const t=[0.5,0.3,0.3,0.5][i];lab([c.from[0]+(c.to[0]-c.from[0])*t,c.from[1]+(c.to[1]-c.from[1])*t],fmt(c.v)+' m',red,8.5);});
+  if(r.A){[[r.A,r.n+'A'],[r.B,r.n+'B']].forEach(([p,t])=>{pg.drawCircle({x:p[0],y:p[1],size:2.4*s,color:red});lab(outward(p,r.g,10*s),t,dark,8);});[[r.R1,'R1'],[r.R2,'R2']].forEach(([p,t])=>{pg.drawCircle({x:p[0],y:p[1],size:2.4*s,color:dark});lab(outward(p,r.ref,10*s),t,dark,8);});}
+  lab(cen,'Batiment '+r.n,dark,10);}
  // page récapitulative
  const t=doc.addPage([842,595]);let y=550;const line=(txt,x,size,col)=>{t.drawText(txt,{x,y,size,font,color:col||rgb(0.1,0.13,0.11)});};
  line('Cotes d\'implantation - '+(S.name||'plan'),40,16,dark);y-=22;line('Echelle 1:'+$('scaleDen').value+(S.k!==1?'  - corrigee x '+S.k.toFixed(4):'')+(S.kind==='image'?'  - plan en image : angles a verifier':''),40,9);y-=24;
